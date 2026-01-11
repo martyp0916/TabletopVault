@@ -1,6 +1,7 @@
 import { StyleSheet, ScrollView, Pressable, Dimensions } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useState } from 'react';
 
@@ -96,6 +97,7 @@ export default function CollectionsScreen() {
           <Pressable
             key={collection.id}
             style={[styles.card, { backgroundColor: colors.card }]}
+            onPress={() => router.push(`/collection/${collection.id}`)}
           >
             {/* Color Banner */}
             <View style={[styles.cardBanner, { backgroundColor: collection.color }]}>

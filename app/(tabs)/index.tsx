@@ -1,6 +1,7 @@
 import { StyleSheet, ScrollView, Pressable } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useState } from 'react';
 
@@ -139,6 +140,7 @@ export default function HomeScreen() {
                 borderBottomColor: colors.border
               }
             ]}
+            onPress={() => router.push(`/item/${item.id}`)}
           >
             {/* Game color indicator */}
             <View style={[styles.gameIndicator, { backgroundColor: GAME_COLORS[item.game] }]} />
