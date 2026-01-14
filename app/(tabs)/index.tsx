@@ -1,52 +1,29 @@
-import { StyleSheet, ScrollView, Pressable } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useState } from 'react';
+import { useAuth } from '@/lib/auth';
+import { useItemStats, useRecentItems } from '@/hooks/useItems';
+import { GAME_COLORS, STATUS_LABELS, GAME_SYSTEM_LABELS, GameSystem, ItemStatus } from '@/types/database';
 
-// Game system colors
-const GAME_COLORS: Record<string, string> = {
-  'Warhammer 40K': '#3b82f6',  // Blue
-  'Age of Sigmar': '#f59e0b',   // Gold
-  'Star Wars Legion': '#ef4444', // Red
-  'Other': '#6b7280',
+// Map database values to display values
+const getGameDisplayName = (game: GameSystem): string => {
+  return GAME_SYSTEM_LABELS[game] || 'Other';
 };
 
-// Hobby status labels
-const STATUS_LABELS: Record<string, string> = {
-  'New in Box': 'Shame Pile',
-  'Assembled': 'Built',
-  'Primed': 'Primed',
-  'Painted': 'Battle Ready',
-  'Based': 'Parade Ready',
+const getStatusDisplayName = (status: ItemStatus): string => {
+  return STATUS_LABELS[status] || status;
 };
-
-// Mock data
-const MOCK_STATS = {
-  totalItems: 127,
-  shameCount: 43,
-  battleReady: 34,
-};
-
-const MOCK_ON_TABLE = {
-  name: 'Leviathan Dreadnought',
-  faction: 'Blood Angels',
-  game: 'Warhammer 40K',
-  status: 'Primed',
-  daysOnTable: 12,
-};
-
-const MOCK_RECENT_ITEMS = [
-  { id: '1', name: 'Primaris Intercessors', game: 'Warhammer 40K', status: 'Painted', faction: 'Space Marines' },
-  { id: '2', name: 'Stormcast Eternals', game: 'Age of Sigmar', status: 'Primed', faction: 'Hammers of Sigmar' },
-  { id: '3', name: 'Rebel Troopers', game: 'Star Wars Legion', status: 'Assembled', faction: 'Rebel Alliance' },
-  { id: '4', name: 'Necron Warriors', game: 'Warhammer 40K', status: 'New in Box', faction: 'Szarekhan' },
-];
 
 export default function HomeScreen() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const colors = isDarkMode ? Colors.dark : Colors.light;
+
+  const { user } = useAuth();
+  const { stats, loading: statsLoading } = useItemStats(user?.id);
+  const { items: recentItems, loading: itemsLoading } = useRecentItems(user?.id, 5);
 
   return (
     <ScrollView
@@ -73,55 +50,76 @@ export default function HomeScreen() {
       {/* Stats Row */}
       <View style={styles.statsRow}>
         <View style={styles.stat}>
-          <Text style={[styles.statNumber, { color: colors.text }]}>{MOCK_STATS.totalItems}</Text>
+          <Text style={[styles.statNumber, { color: colors.text }]}>
+            {statsLoading ? '-' : stats.total}
+          </Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>total</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
         <View style={styles.stat}>
-          <Text style={[styles.statNumber, { color: '#10b981' }]}>{MOCK_STATS.battleReady}</Text>
+          <Text style={[styles.statNumber, { color: '#10b981' }]}>
+            {statsLoading ? '-' : stats.battleReady}
+          </Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>battle ready</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
         <View style={styles.stat}>
-          <Text style={[styles.statNumber, { color: '#ef4444' }]}>{MOCK_STATS.shameCount}</Text>
+          <Text style={[styles.statNumber, { color: '#ef4444' }]}>
+            {statsLoading ? '-' : stats.shamePile}
+          </Text>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>shame pile</Text>
         </View>
       </View>
 
       {/* On The Table - Current WIP */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>ON THE TABLE</Text>
-        <View style={[styles.wipCard, { borderLeftColor: GAME_COLORS[MOCK_ON_TABLE.game] }]}>
-          <View style={styles.wipHeader}>
-            <Text style={[styles.wipName, { color: colors.text }]}>{MOCK_ON_TABLE.name}</Text>
-            <View style={[styles.gameTag, { backgroundColor: GAME_COLORS[MOCK_ON_TABLE.game] + '20' }]}>
-              <Text style={[styles.gameTagText, { color: GAME_COLORS[MOCK_ON_TABLE.game] }]}>
-                {MOCK_ON_TABLE.game === 'Warhammer 40K' ? '40K' :
-                 MOCK_ON_TABLE.game === 'Age of Sigmar' ? 'AoS' :
-                 MOCK_ON_TABLE.game === 'Star Wars Legion' ? 'Legion' : 'Other'}
-              </Text>
-            </View>
-          </View>
-          <Text style={[styles.wipFaction, { color: colors.textSecondary }]}>
-            {MOCK_ON_TABLE.faction}
-          </Text>
-          <View style={styles.wipFooter}>
-            <Text style={[styles.wipStatus, { color: colors.textSecondary }]}>
-              {STATUS_LABELS[MOCK_ON_TABLE.status] || MOCK_ON_TABLE.status}
-            </Text>
-            <Text style={[styles.wipDays, { color: colors.textSecondary }]}>
-              {MOCK_ON_TABLE.daysOnTable} days
-            </Text>
-          </View>
+      {recentItems.length > 0 && recentItems.find(i => i.status === 'assembled' || i.status === 'primed') && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>ON THE TABLE</Text>
+          {(() => {
+            const wipItem = recentItems.find(i => i.status === 'assembled' || i.status === 'primed');
+            if (!wipItem) return null;
+            const gameColor = GAME_COLORS[wipItem.game_system] || GAME_COLORS.other;
+            return (
+              <Pressable
+                style={[styles.wipCard, { borderLeftColor: gameColor }]}
+                onPress={() => router.push(`/item/${wipItem.id}`)}
+              >
+                <View style={styles.wipHeader}>
+                  <Text style={[styles.wipName, { color: colors.text }]}>{wipItem.name}</Text>
+                  <View style={[styles.gameTag, { backgroundColor: gameColor + '20' }]}>
+                    <Text style={[styles.gameTagText, { color: gameColor }]}>
+                      {wipItem.game_system === 'wh40k' ? '40K' :
+                       wipItem.game_system === 'aos' ? 'AoS' :
+                       wipItem.game_system === 'legion' ? 'Legion' : 'Other'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.wipFaction, { color: colors.textSecondary }]}>
+                  {wipItem.faction || 'No faction'}
+                </Text>
+                <View style={styles.wipFooter}>
+                  <Text style={[styles.wipStatus, { color: colors.textSecondary }]}>
+                    {getStatusDisplayName(wipItem.status)}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })()}
         </View>
-      </View>
+      )}
 
       {/* Quick Actions */}
       <View style={styles.actions}>
-        <Pressable style={[styles.actionButton, { backgroundColor: colors.text }]}>
+        <Pressable
+          style={[styles.actionButton, { backgroundColor: colors.text }]}
+          onPress={() => router.push('/(tabs)/add')}
+        >
           <Text style={[styles.actionButtonText, { color: colors.background }]}>+ Add to pile</Text>
         </Pressable>
-        <Pressable style={styles.actionLink}>
+        <Pressable
+          style={styles.actionLink}
+          onPress={() => router.push('/(tabs)/collections')}
+        >
           <Text style={[styles.actionLinkText, { color: colors.text }]}>View armory →</Text>
         </Pressable>
       </View>
@@ -130,34 +128,42 @@ export default function HomeScreen() {
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>RECENT ACTIVITY</Text>
 
-        {MOCK_RECENT_ITEMS.map((item, index) => (
-          <Pressable
-            key={item.id}
-            style={[
-              styles.listItem,
-              index !== MOCK_RECENT_ITEMS.length - 1 && {
-                borderBottomWidth: 1,
-                borderBottomColor: colors.border
-              }
-            ]}
-            onPress={() => router.push(`/item/${item.id}`)}
-          >
-            {/* Game color indicator */}
-            <View style={[styles.gameIndicator, { backgroundColor: GAME_COLORS[item.game] }]} />
+        {itemsLoading ? (
+          <ActivityIndicator style={{ marginTop: 20 }} />
+        ) : recentItems.length === 0 ? (
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            No items yet. Add your first miniature!
+          </Text>
+        ) : (
+          recentItems.map((item, index) => (
+            <Pressable
+              key={item.id}
+              style={[
+                styles.listItem,
+                index !== recentItems.length - 1 && {
+                  borderBottomWidth: 1,
+                  borderBottomColor: colors.border
+                }
+              ]}
+              onPress={() => router.push(`/item/${item.id}`)}
+            >
+              {/* Game color indicator */}
+              <View style={[styles.gameIndicator, { backgroundColor: GAME_COLORS[item.game_system] || GAME_COLORS.other }]} />
 
-            <View style={styles.listItemContent}>
-              <View style={styles.listItemTop}>
-                <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
-                <Text style={[styles.itemStatus, { color: getStatusColor(item.status) }]}>
-                  {STATUS_LABELS[item.status] || item.status}
+              <View style={styles.listItemContent}>
+                <View style={styles.listItemTop}>
+                  <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
+                  <Text style={[styles.itemStatus, { color: getStatusColor(item.status) }]}>
+                    {getStatusDisplayName(item.status)}
+                  </Text>
+                </View>
+                <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>
+                  {item.faction || 'No faction'}
                 </Text>
               </View>
-              <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>
-                {item.faction}
-              </Text>
-            </View>
-          </Pressable>
-        ))}
+            </Pressable>
+          ))
+        )}
       </View>
 
       {/* Bottom Spacing */}
@@ -168,11 +174,11 @@ export default function HomeScreen() {
 
 function getStatusColor(status: string): string {
   switch (status) {
-    case 'Painted': return '#10b981';
-    case 'Based': return '#8b5cf6';
-    case 'Primed': return '#6366f1';
-    case 'Assembled': return '#f59e0b';
-    case 'New in Box': return '#ef4444';
+    case 'painted': return '#10b981';
+    case 'based': return '#8b5cf6';
+    case 'primed': return '#6366f1';
+    case 'assembled': return '#f59e0b';
+    case 'nib': return '#ef4444';
     default: return '#9ca3af';
   }
 }
@@ -337,5 +343,11 @@ const styles = StyleSheet.create({
   itemMeta: {
     fontSize: 13,
     marginTop: 2,
+  },
+  emptyText: {
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 20,
+    fontStyle: 'italic',
   },
 });

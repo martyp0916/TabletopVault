@@ -1,64 +1,48 @@
-import { StyleSheet, ScrollView, Pressable } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useState } from 'react';
-
-// Game system colors
-const GAME_COLORS: Record<string, string> = {
-  'Warhammer 40K': '#3b82f6',
-  'Age of Sigmar': '#f59e0b',
-  'Star Wars Legion': '#ef4444',
-  'Mixed': '#8b5cf6',
-  'Other': '#6b7280',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  'New in Box': 'Shame Pile',
-  'Assembled': 'Built',
-  'Primed': 'Primed',
-  'Painted': 'Battle Ready',
-  'Based': 'Parade Ready',
-};
-
-// Mock collection data
-const MOCK_COLLECTIONS: Record<string, any> = {
-  '1': {
-    id: '1',
-    name: 'Space Marines',
-    game: 'Warhammer 40K',
-    description: 'My Ultramarines 2nd Company',
-    itemCount: 47,
-    items: [
-      { id: '101', name: 'Primaris Captain', status: 'Painted', faction: 'Ultramarines' },
-      { id: '102', name: 'Intercessor Squad', status: 'Painted', faction: 'Ultramarines' },
-      { id: '103', name: 'Redemptor Dreadnought', status: 'Primed', faction: 'Ultramarines' },
-      { id: '104', name: 'Bladeguard Veterans', status: 'Assembled', faction: 'Ultramarines' },
-      { id: '105', name: 'Eradicator Squad', status: 'New in Box', faction: 'Ultramarines' },
-    ],
-  },
-  '2': {
-    id: '2',
-    name: 'Stormcast Eternals',
-    game: 'Age of Sigmar',
-    description: 'Hammers of Sigmar Strike Chamber',
-    itemCount: 32,
-    items: [
-      { id: '201', name: 'Lord-Celestant', status: 'Painted', faction: 'Hammers of Sigmar' },
-      { id: '202', name: 'Liberators', status: 'Primed', faction: 'Hammers of Sigmar' },
-      { id: '203', name: 'Prosecutors', status: 'Assembled', faction: 'Hammers of Sigmar' },
-    ],
-  },
-};
+import { useAuth } from '@/lib/auth';
+import { useCollection } from '@/hooks/useCollections';
+import { useItems } from '@/hooks/useItems';
+import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus } from '@/types/database';
 
 export default function CollectionDetailScreen() {
   const { id } = useLocalSearchParams();
   const [isDarkMode, setIsDarkMode] = useState(false);
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
-  const collection = MOCK_COLLECTIONS[id as string] || MOCK_COLLECTIONS['1'];
-  const gameColor = GAME_COLORS[collection.game] || GAME_COLORS['Other'];
+  const { user } = useAuth();
+  const { collection, loading: collectionLoading } = useCollection(id as string);
+  const { items, loading: itemsLoading, deleteItem } = useItems(user?.id, id as string);
+
+  const loading = collectionLoading || itemsLoading;
+
+  // Calculate stats
+  const battleReadyCount = items.filter(i => i.status === 'painted' || i.status === 'based').length;
+  const inProgressCount = items.filter(i => i.status === 'assembled' || i.status === 'primed').length;
+  const shamePileCount = items.filter(i => i.status === 'nib').length;
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (!collection) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.text }}>Collection not found</Text>
+        <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
+          <Text style={{ color: '#3b82f6' }}>Go back</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -71,11 +55,6 @@ export default function CollectionDetailScreen() {
           <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
             {collection.name}
           </Text>
-          <View style={[styles.gameTag, { backgroundColor: gameColor + '20' }]}>
-            <Text style={[styles.gameTagText, { color: gameColor }]}>
-              {collection.game}
-            </Text>
-          </View>
         </View>
         <Pressable onPress={() => setIsDarkMode(!isDarkMode)}>
           <FontAwesome name={isDarkMode ? 'sun-o' : 'moon-o'} size={20} color={colors.text} />
@@ -85,13 +64,13 @@ export default function CollectionDetailScreen() {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Collection Info */}
         <View style={styles.infoSection}>
-          <View style={[styles.colorBar, { backgroundColor: gameColor }]} />
+          <View style={[styles.colorBar, { backgroundColor: '#3b82f6' }]} />
           <View style={styles.infoContent}>
             <Text style={[styles.description, { color: colors.textSecondary }]}>
-              {collection.description}
+              {collection.description || 'No description'}
             </Text>
             <Text style={[styles.itemCount, { color: colors.text }]}>
-              {collection.itemCount} items
+              {items.length} items
             </Text>
           </View>
         </View>
@@ -100,19 +79,19 @@ export default function CollectionDetailScreen() {
         <View style={styles.statsRow}>
           <View style={styles.stat}>
             <Text style={[styles.statNumber, { color: '#10b981' }]}>
-              {collection.items.filter((i: any) => i.status === 'Painted').length}
+              {battleReadyCount}
             </Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Battle Ready</Text>
           </View>
           <View style={styles.stat}>
             <Text style={[styles.statNumber, { color: '#f59e0b' }]}>
-              {collection.items.filter((i: any) => i.status === 'Assembled' || i.status === 'Primed').length}
+              {inProgressCount}
             </Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>In Progress</Text>
           </View>
           <View style={styles.stat}>
             <Text style={[styles.statNumber, { color: '#ef4444' }]}>
-              {collection.items.filter((i: any) => i.status === 'New in Box').length}
+              {shamePileCount}
             </Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Shame Pile</Text>
           </View>
@@ -122,33 +101,44 @@ export default function CollectionDetailScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>ITEMS</Text>
-            <Pressable>
-              <Text style={[styles.addText, { color: gameColor }]}>+ Add</Text>
+            <Pressable onPress={() => router.push('/(tabs)/add')}>
+              <Text style={[styles.addText, { color: '#3b82f6' }]}>+ Add</Text>
             </Pressable>
           </View>
 
-          {collection.items.map((item: any, index: number) => (
-            <Pressable
-              key={item.id}
-              style={[
-                styles.itemRow,
-                index !== collection.items.length - 1 && {
-                  borderBottomWidth: 1,
-                  borderBottomColor: colors.border,
-                },
-              ]}
-              onPress={() => router.push(`/item/${item.id}`)}
-            >
-              <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
-              <View style={styles.itemInfo}>
-                <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
-                <Text style={[styles.itemFaction, { color: colors.textSecondary }]}>{item.faction}</Text>
-              </View>
-              <Text style={[styles.itemStatus, { color: getStatusColor(item.status) }]}>
-                {STATUS_LABELS[item.status] || item.status}
+          {items.length === 0 ? (
+            <View style={styles.emptyState}>
+              <FontAwesome name="cube" size={32} color={colors.textSecondary} />
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                No items yet. Add your first miniature!
               </Text>
-            </Pressable>
-          ))}
+            </View>
+          ) : (
+            items.map((item, index) => (
+              <Pressable
+                key={item.id}
+                style={[
+                  styles.itemRow,
+                  index !== items.length - 1 && {
+                    borderBottomWidth: 1,
+                    borderBottomColor: colors.border,
+                  },
+                ]}
+                onPress={() => router.push(`/item/${item.id}`)}
+              >
+                <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
+                <View style={styles.itemInfo}>
+                  <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
+                  <Text style={[styles.itemFaction, { color: colors.textSecondary }]}>
+                    {item.faction || 'No faction'}
+                  </Text>
+                </View>
+                <Text style={[styles.itemStatus, { color: getStatusColor(item.status) }]}>
+                  {STATUS_LABELS[item.status] || item.status}
+                </Text>
+              </Pressable>
+            ))
+          )}
         </View>
 
         <View style={{ height: 100 }} />
@@ -159,11 +149,11 @@ export default function CollectionDetailScreen() {
 
 function getStatusColor(status: string): string {
   switch (status) {
-    case 'Painted': return '#10b981';
-    case 'Based': return '#8b5cf6';
-    case 'Primed': return '#6366f1';
-    case 'Assembled': return '#f59e0b';
-    case 'New in Box': return '#ef4444';
+    case 'painted': return '#10b981';
+    case 'based': return '#8b5cf6';
+    case 'primed': return '#6366f1';
+    case 'assembled': return '#f59e0b';
+    case 'nib': return '#ef4444';
     default: return '#9ca3af';
   }
 }
@@ -171,6 +161,10 @@ function getStatusColor(status: string): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -191,17 +185,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: '700',
-  },
-  gameTag: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginTop: 4,
-  },
-  gameTagText: {
-    fontSize: 11,
-    fontWeight: '600',
   },
   infoSection: {
     flexDirection: 'row',
@@ -265,6 +248,16 @@ const styles = StyleSheet.create({
   addText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    backgroundColor: 'transparent',
+  },
+  emptyText: {
+    fontSize: 15,
+    marginTop: 12,
+    textAlign: 'center',
   },
   itemRow: {
     flexDirection: 'row',

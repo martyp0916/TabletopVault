@@ -1,29 +1,112 @@
-import { StyleSheet, ScrollView, Pressable, TextInput } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { router } from 'expo-router';
+import { useAuth } from '@/lib/auth';
+import { useCollections } from '@/hooks/useCollections';
+import { useItems } from '@/hooks/useItems';
+import { GameSystem, ItemStatus, GAME_SYSTEM_LABELS, STATUS_LABELS } from '@/types/database';
 
-const GAME_SYSTEMS = ['Warhammer 40K', 'Age of Sigmar', 'Star Wars Legion', 'Other'];
-const STATUSES = ['New in Box', 'Assembled', 'Primed', 'Painted', 'Based'];
+const GAME_SYSTEMS: { value: GameSystem; label: string }[] = [
+  { value: 'wh40k', label: 'Warhammer 40K' },
+  { value: 'aos', label: 'Age of Sigmar' },
+  { value: 'legion', label: 'Star Wars Legion' },
+  { value: 'other', label: 'Other' },
+];
+
+const STATUSES: { value: ItemStatus; label: string }[] = [
+  { value: 'nib', label: 'New in Box' },
+  { value: 'assembled', label: 'Assembled' },
+  { value: 'primed', label: 'Primed' },
+  { value: 'painted', label: 'Painted' },
+  { value: 'based', label: 'Based' },
+];
 
 export default function AddScreen() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
+  const { user } = useAuth();
+  const { collections, loading: collectionsLoading } = useCollections(user?.id);
+  const { createItem } = useItems(user?.id);
+
   // Form state
   const [name, setName] = useState('');
-  const [gameSystem, setGameSystem] = useState('');
+  const [gameSystem, setGameSystem] = useState<GameSystem | ''>('');
   const [faction, setFaction] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<ItemStatus | ''>('');
   const [price, setPrice] = useState('');
   const [notes, setNotes] = useState('');
+  const [selectedCollection, setSelectedCollection] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Auto-select first collection
+  useEffect(() => {
+    if (collections.length > 0 && !selectedCollection) {
+      setSelectedCollection(collections[0].id);
+    }
+  }, [collections]);
+
+  const resetForm = () => {
+    setName('');
+    setGameSystem('');
+    setFaction('');
+    setQuantity('1');
+    setStatus('');
+    setPrice('');
+    setNotes('');
+  };
+
+  const handleSubmit = async () => {
+    if (!name.trim()) {
+      Alert.alert('Error', 'Please enter a name for the item');
+      return;
+    }
+
+    if (!selectedCollection) {
+      Alert.alert('Error', 'Please select a collection first. Create one in the Collections tab.');
+      return;
+    }
+
+    if (!gameSystem) {
+      Alert.alert('Error', 'Please select a game system');
+      return;
+    }
+
+    setSaving(true);
+
+    const { error } = await createItem({
+      collection_id: selectedCollection,
+      name: name.trim(),
+      game_system: gameSystem,
+      faction: faction.trim() || undefined,
+      quantity: parseInt(quantity) || 1,
+      status: status || 'nib',
+      purchase_price: price ? parseFloat(price.replace('$', '')) : undefined,
+      notes: notes.trim() || undefined,
+    });
+
+    setSaving(false);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+    } else {
+      Alert.alert('Success', 'Item added to your collection!', [
+        { text: 'Add Another', onPress: resetForm },
+        { text: 'View Collection', onPress: () => router.push(`/collection/${selectedCollection}`) },
+      ]);
+      resetForm();
+    }
+  };
 
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
     >
       {/* Header */}
       <View style={styles.header}>
@@ -53,6 +136,49 @@ export default function AddScreen() {
 
       {/* Form Fields */}
       <View style={styles.form}>
+        {/* Collection Picker */}
+        <View style={styles.fieldGroup}>
+          <Text style={[styles.label, { color: colors.text }]}>Collection *</Text>
+          {collectionsLoading ? (
+            <ActivityIndicator />
+          ) : collections.length === 0 ? (
+            <Pressable
+              style={[styles.createCollectionBtn, { borderColor: colors.border }]}
+              onPress={() => router.push('/(tabs)/collections')}
+            >
+              <FontAwesome name="plus" size={16} color={colors.textSecondary} />
+              <Text style={[styles.createCollectionText, { color: colors.textSecondary }]}>
+                Create a collection first
+              </Text>
+            </Pressable>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={styles.chipContainer}>
+                {collections.map((col) => (
+                  <Pressable
+                    key={col.id}
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: selectedCollection === col.id ? '#374151' : colors.card,
+                        borderColor: selectedCollection === col.id ? '#374151' : colors.border,
+                      }
+                    ]}
+                    onPress={() => setSelectedCollection(col.id)}
+                  >
+                    <Text style={[
+                      styles.chipText,
+                      { color: selectedCollection === col.id ? '#fff' : colors.text }
+                    ]}>
+                      {col.name}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+          )}
+        </View>
+
         {/* Name */}
         <View style={styles.fieldGroup}>
           <Text style={[styles.label, { color: colors.text }]}>Name *</Text>
@@ -71,21 +197,21 @@ export default function AddScreen() {
           <View style={styles.chipContainer}>
             {GAME_SYSTEMS.map((game) => (
               <Pressable
-                key={game}
+                key={game.value}
                 style={[
                   styles.chip,
                   {
-                    backgroundColor: gameSystem === game ? '#374151' : colors.card,
-                    borderColor: gameSystem === game ? '#374151' : colors.border,
+                    backgroundColor: gameSystem === game.value ? '#374151' : colors.card,
+                    borderColor: gameSystem === game.value ? '#374151' : colors.border,
                   }
                 ]}
-                onPress={() => setGameSystem(game)}
+                onPress={() => setGameSystem(game.value)}
               >
                 <Text style={[
                   styles.chipText,
-                  { color: gameSystem === game ? '#fff' : colors.text }
+                  { color: gameSystem === game.value ? '#fff' : colors.text }
                 ]}>
-                  {game}
+                  {game.label}
                 </Text>
               </Pressable>
             ))}
@@ -136,21 +262,21 @@ export default function AddScreen() {
           <View style={styles.chipContainer}>
             {STATUSES.map((s) => (
               <Pressable
-                key={s}
+                key={s.value}
                 style={[
                   styles.chip,
                   {
-                    backgroundColor: status === s ? getStatusColor(s) : colors.card,
-                    borderColor: status === s ? getStatusColor(s) : colors.border,
+                    backgroundColor: status === s.value ? getStatusColor(s.value) : colors.card,
+                    borderColor: status === s.value ? getStatusColor(s.value) : colors.border,
                   }
                 ]}
-                onPress={() => setStatus(s)}
+                onPress={() => setStatus(s.value)}
               >
                 <Text style={[
                   styles.chipText,
-                  { color: status === s ? '#fff' : colors.text }
+                  { color: status === s.value ? '#fff' : colors.text }
                 ]}>
-                  {s}
+                  {s.label}
                 </Text>
               </Pressable>
             ))}
@@ -173,9 +299,19 @@ export default function AddScreen() {
         </View>
 
         {/* Submit Button */}
-        <Pressable style={styles.submitButton}>
-          <FontAwesome name="check" size={18} color="#fff" />
-          <Text style={styles.submitText}>Add to Collection</Text>
+        <Pressable
+          style={[styles.submitButton, saving && styles.submitButtonDisabled]}
+          onPress={handleSubmit}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <FontAwesome name="check" size={18} color="#fff" />
+              <Text style={styles.submitText}>Add to Collection</Text>
+            </>
+          )}
         </Pressable>
       </View>
 
@@ -187,11 +323,11 @@ export default function AddScreen() {
 
 function getStatusColor(status: string): string {
   switch (status) {
-    case 'Painted': return '#10b981';
-    case 'Primed': return '#6366f1';
-    case 'Assembled': return '#f59e0b';
-    case 'Based': return '#ec4899';
-    case 'New in Box': return '#6b7280';
+    case 'painted': return '#10b981';
+    case 'primed': return '#6366f1';
+    case 'assembled': return '#f59e0b';
+    case 'based': return '#ec4899';
+    case 'nib': return '#6b7280';
     default: return '#6b7280';
   }
 }
@@ -294,6 +430,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
+  createCollectionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    gap: 8,
+  },
+  createCollectionText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
   submitButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -303,6 +453,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
     marginTop: 10,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
   },
   submitText: {
     color: '#fff',

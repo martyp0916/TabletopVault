@@ -1,22 +1,45 @@
-import { StyleSheet, ScrollView, Pressable, Switch } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, Switch, ActivityIndicator, Alert } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { useState } from 'react';
-
-// Mock user data
-const MOCK_USER = {
-  name: 'Battle Brother',
-  email: 'collector@tabletopvault.com',
-  memberSince: 'January 2024',
-  totalItems: 127,
-  totalCollections: 5,
-};
+import { useAuth } from '@/lib/auth';
+import { useProfile } from '@/hooks/useProfile';
+import { useCollections } from '@/hooks/useCollections';
+import { useItemStats } from '@/hooks/useItems';
 
 export default function ProfileScreen() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [loggingOut, setLoggingOut] = useState(false);
   const colors = isDarkMode ? Colors.dark : Colors.light;
+
+  const { user, signOut } = useAuth();
+  const { profile, loading: profileLoading } = useProfile(user?.id);
+  const { collections } = useCollections(user?.id);
+  const { stats } = useItemStats(user?.id);
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Log Out',
+      'Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log Out',
+          style: 'destructive',
+          onPress: async () => {
+            setLoggingOut(true);
+            await signOut();
+          },
+        },
+      ]
+    );
+  };
+
+  const memberSince = profile?.created_at
+    ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : 'Loading...';
 
   return (
     <ScrollView
@@ -34,25 +57,26 @@ export default function ProfileScreen() {
           <View style={[styles.avatar, { backgroundColor: '#374151' }]}>
             <FontAwesome name="user" size={40} color="#fff" />
           </View>
-          <Pressable style={[styles.editAvatarButton, { backgroundColor: colors.background }]}>
-            <FontAwesome name="camera" size={12} color={colors.text} />
-          </Pressable>
         </View>
-        <Text style={[styles.userName, { color: colors.text }]}>{MOCK_USER.name}</Text>
-        <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{MOCK_USER.email}</Text>
+        <Text style={[styles.userName, { color: colors.text }]}>
+          {profile?.username || 'Battle Brother'}
+        </Text>
+        <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
+          {profile?.email || user?.email || 'Loading...'}
+        </Text>
         <Text style={[styles.memberSince, { color: colors.textSecondary }]}>
-          Member since {MOCK_USER.memberSince}
+          Member since {memberSince}
         </Text>
 
         {/* Stats Row */}
         <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
           <View style={styles.stat}>
-            <Text style={[styles.statValue, { color: colors.text }]}>{MOCK_USER.totalItems}</Text>
+            <Text style={[styles.statValue, { color: colors.text }]}>{stats.total}</Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Items</Text>
           </View>
           <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
           <View style={styles.stat}>
-            <Text style={[styles.statValue, { color: colors.text }]}>{MOCK_USER.totalCollections}</Text>
+            <Text style={[styles.statValue, { color: colors.text }]}>{collections.length}</Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Collections</Text>
           </View>
         </View>
@@ -156,9 +180,19 @@ export default function ProfileScreen() {
       </View>
 
       {/* Logout Button */}
-      <Pressable style={[styles.logoutButton, { backgroundColor: colors.card }]}>
-        <FontAwesome name="sign-out" size={18} color="#ef4444" />
-        <Text style={styles.logoutText}>Log Out</Text>
+      <Pressable
+        style={[styles.logoutButton, { backgroundColor: colors.card }]}
+        onPress={handleLogout}
+        disabled={loggingOut}
+      >
+        {loggingOut ? (
+          <ActivityIndicator color="#ef4444" />
+        ) : (
+          <>
+            <FontAwesome name="sign-out" size={18} color="#ef4444" />
+            <Text style={styles.logoutText}>Log Out</Text>
+          </>
+        )}
       </Pressable>
 
       {/* App Version */}
@@ -201,18 +235,6 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  editAvatarButton: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
   },
   userName: {
     fontSize: 24,

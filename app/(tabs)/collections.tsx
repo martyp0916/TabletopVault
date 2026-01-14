@@ -1,62 +1,69 @@
-import { StyleSheet, ScrollView, Pressable, Dimensions } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator, TextInput, Modal } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/lib/auth';
+import { useCollections } from '@/hooks/useCollections';
+import { supabase } from '@/lib/supabase';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - 48 - 12) / 2; // 2 columns with padding and gap
+const CARD_WIDTH = (width - 48 - 12) / 2;
 
-// Mock data
-const MOCK_COLLECTIONS = [
-  {
-    id: '1',
-    name: 'Space Marines',
-    game: 'Warhammer 40K',
-    itemCount: 47,
-    color: '#3b82f6',
-  },
-  {
-    id: '2',
-    name: 'Stormcast Eternals',
-    game: 'Age of Sigmar',
-    itemCount: 32,
-    color: '#f59e0b',
-  },
-  {
-    id: '3',
-    name: 'Rebel Alliance',
-    game: 'Star Wars Legion',
-    itemCount: 18,
-    color: '#ef4444',
-  },
-  {
-    id: '4',
-    name: 'Necrons',
-    game: 'Warhammer 40K',
-    itemCount: 24,
-    color: '#10b981',
-  },
-  {
-    id: '5',
-    name: 'Pile of Shame',
-    game: 'Mixed',
-    itemCount: 89,
-    color: '#8b5cf6',
-  },
-  {
-    id: '6',
-    name: 'Painted & Done',
-    game: 'Mixed',
-    itemCount: 43,
-    color: '#ec4899',
-  },
+// Colors for collections (cycle through these)
+const COLLECTION_COLORS = [
+  '#3b82f6', '#f59e0b', '#ef4444', '#10b981', '#8b5cf6', '#ec4899',
+  '#06b6d4', '#84cc16', '#f97316', '#6366f1',
 ];
 
 export default function CollectionsScreen() {
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [itemCounts, setItemCounts] = useState<Record<string, number>>({});
+
   const colors = isDarkMode ? Colors.dark : Colors.light;
+  const { user } = useAuth();
+  const { collections, loading, createCollection, refresh } = useCollections(user?.id);
+
+  // Fetch item counts for each collection
+  useEffect(() => {
+    if (collections.length > 0) {
+      const fetchCounts = async () => {
+        const counts: Record<string, number> = {};
+        for (const col of collections) {
+          const { count } = await supabase
+            .from('items')
+            .select('*', { count: 'exact', head: true })
+            .eq('collection_id', col.id);
+          counts[col.id] = count || 0;
+        }
+        setItemCounts(counts);
+      };
+      fetchCounts();
+    }
+  }, [collections]);
+
+  const handleCreateCollection = async () => {
+    if (!newName.trim()) return;
+
+    setCreating(true);
+    const { error } = await createCollection(newName.trim(), newDescription.trim() || undefined);
+    setCreating(false);
+
+    if (!error) {
+      setShowModal(false);
+      setNewName('');
+      setNewDescription('');
+    }
+  };
+
+  const getCollectionColor = (index: number) => {
+    return COLLECTION_COLORS[index % COLLECTION_COLORS.length];
+  };
 
   return (
     <ScrollView
@@ -84,7 +91,10 @@ export default function CollectionsScreen() {
       </View>
 
       {/* Add New Collection Button */}
-      <Pressable style={[styles.addButton, { borderColor: colors.border }]}>
+      <Pressable
+        style={[styles.addButton, { borderColor: colors.border }]}
+        onPress={() => setShowModal(true)}
+      >
         <FontAwesome name="plus" size={20} color={colors.textSecondary} />
         <Text style={[styles.addButtonText, { color: colors.textSecondary }]}>
           New Collection
@@ -92,42 +102,106 @@ export default function CollectionsScreen() {
       </Pressable>
 
       {/* Collections Grid */}
-      <View style={styles.grid}>
-        {MOCK_COLLECTIONS.map((collection) => (
-          <Pressable
-            key={collection.id}
-            style={[styles.card, { backgroundColor: colors.card }]}
-            onPress={() => router.push(`/collection/${collection.id}`)}
-          >
-            {/* Color Banner */}
-            <View style={[styles.cardBanner, { backgroundColor: collection.color }]}>
-              <FontAwesome name="folder" size={32} color="rgba(255,255,255,0.9)" />
-            </View>
-
-            {/* Card Content */}
-            <View style={styles.cardContent}>
-              <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>
-                {collection.name}
-              </Text>
-              <Text style={[styles.cardGame, { color: colors.textSecondary }]}>
-                {collection.game}
-              </Text>
-              <View style={styles.cardFooter}>
-                <View style={styles.itemCount}>
-                  <FontAwesome name="cube" size={12} color={colors.textSecondary} />
-                  <Text style={[styles.itemCountText, { color: colors.textSecondary }]}>
-                    {collection.itemCount} items
-                  </Text>
-                </View>
-                <FontAwesome name="chevron-right" size={12} color={colors.textSecondary} />
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 40 }} />
+      ) : collections.length === 0 ? (
+        <View style={styles.emptyState}>
+          <FontAwesome name="folder-open-o" size={48} color={colors.textSecondary} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No collections yet</Text>
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            Create your first collection to organize your miniatures
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.grid}>
+          {collections.map((collection, index) => (
+            <Pressable
+              key={collection.id}
+              style={[styles.card, { backgroundColor: colors.card }]}
+              onPress={() => router.push(`/collection/${collection.id}`)}
+            >
+              {/* Color Banner */}
+              <View style={[styles.cardBanner, { backgroundColor: getCollectionColor(index) }]}>
+                <FontAwesome name="folder" size={32} color="rgba(255,255,255,0.9)" />
               </View>
-            </View>
-          </Pressable>
-        ))}
-      </View>
+
+              {/* Card Content */}
+              <View style={styles.cardContent}>
+                <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>
+                  {collection.name}
+                </Text>
+                <Text style={[styles.cardGame, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {collection.description || 'No description'}
+                </Text>
+                <View style={styles.cardFooter}>
+                  <View style={styles.itemCount}>
+                    <FontAwesome name="cube" size={12} color={colors.textSecondary} />
+                    <Text style={[styles.itemCountText, { color: colors.textSecondary }]}>
+                      {itemCounts[collection.id] ?? 0} items
+                    </Text>
+                  </View>
+                  <FontAwesome name="chevron-right" size={12} color={colors.textSecondary} />
+                </View>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      )}
 
       {/* Bottom Spacing */}
       <View style={{ height: 120 }} />
+
+      {/* Create Collection Modal */}
+      <Modal
+        visible={showModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowModal(false)}
+      >
+        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+          <View style={styles.modalHeader}>
+            <Pressable onPress={() => setShowModal(false)}>
+              <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
+            </Pressable>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>New Collection</Text>
+            <Pressable onPress={handleCreateCollection} disabled={creating || !newName.trim()}>
+              <Text style={[
+                styles.modalSave,
+                { color: newName.trim() ? '#3b82f6' : colors.textSecondary }
+              ]}>
+                {creating ? 'Saving...' : 'Save'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.modalContent}>
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Name</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., Space Marines, Pile of Shame"
+                placeholderTextColor={colors.textSecondary}
+                value={newName}
+                onChangeText={setNewName}
+                autoFocus
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Description (optional)</Text>
+              <TextInput
+                style={[styles.input, styles.textArea, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                placeholder="What's this collection for?"
+                placeholderTextColor={colors.textSecondary}
+                value={newDescription}
+                onChangeText={setNewDescription}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -229,5 +303,69 @@ const styles = StyleSheet.create({
   },
   itemCountText: {
     fontSize: 12,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingHorizontal: 40,
+    backgroundColor: 'transparent',
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptyText: {
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 22,
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    paddingTop: 20,
+    backgroundColor: 'transparent',
+  },
+  modalCancel: {
+    fontSize: 16,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  modalSave: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalContent: {
+    padding: 24,
+    gap: 20,
+    backgroundColor: 'transparent',
+  },
+  inputGroup: {
+    gap: 8,
+    backgroundColor: 'transparent',
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  input: {
+    height: 52,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    borderWidth: 1,
+  },
+  textArea: {
+    height: 100,
+    paddingTop: 14,
+    textAlignVertical: 'top',
   },
 });

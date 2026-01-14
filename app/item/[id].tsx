@@ -1,73 +1,72 @@
-import { StyleSheet, ScrollView, Pressable } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useState } from 'react';
-
-const GAME_COLORS: Record<string, string> = {
-  'Warhammer 40K': '#3b82f6',
-  'Age of Sigmar': '#f59e0b',
-  'Star Wars Legion': '#ef4444',
-  'Other': '#6b7280',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  'New in Box': 'Shame Pile',
-  'Assembled': 'Built',
-  'Primed': 'Primed',
-  'Painted': 'Battle Ready',
-  'Based': 'Parade Ready',
-};
-
-// Mock item data
-const MOCK_ITEMS: Record<string, any> = {
-  '1': {
-    id: '1',
-    name: 'Primaris Intercessors',
-    game: 'Warhammer 40K',
-    faction: 'Space Marines',
-    status: 'Painted',
-    quantity: 10,
-    purchasePrice: 60,
-    currentValue: 55,
-    purchaseDate: '2024-06-15',
-    notes: 'Base coated with Macragge Blue. Edge highlighted with Fenrisian Grey. Based with Astrogranite Debris.',
-  },
-  '101': {
-    id: '101',
-    name: 'Primaris Captain',
-    game: 'Warhammer 40K',
-    faction: 'Ultramarines',
-    status: 'Painted',
-    quantity: 1,
-    purchasePrice: 35,
-    currentValue: 40,
-    purchaseDate: '2024-03-10',
-    notes: 'Painted in classic Ultramarines scheme. Won best painted at local tournament.',
-  },
-  '102': {
-    id: '102',
-    name: 'Intercessor Squad',
-    game: 'Warhammer 40K',
-    faction: 'Ultramarines',
-    status: 'Painted',
-    quantity: 10,
-    purchasePrice: 60,
-    currentValue: 55,
-    purchaseDate: '2024-04-20',
-    notes: 'Standard battle line troops. Mix of bolt rifles and auto bolt rifles.',
-  },
-};
+import { useItem } from '@/hooks/useItems';
+import { supabase } from '@/lib/supabase';
+import { GAME_COLORS, STATUS_LABELS, GAME_SYSTEM_LABELS, GameSystem, ItemStatus } from '@/types/database';
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams();
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
-  const item = MOCK_ITEMS[id as string] || MOCK_ITEMS['1'];
-  const gameColor = GAME_COLORS[item.game] || GAME_COLORS['Other'];
+  const { item, loading, error } = useItem(id as string);
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Item',
+      'Are you sure you want to delete this item? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            const { error } = await supabase
+              .from('items')
+              .delete()
+              .eq('id', id);
+
+            if (error) {
+              Alert.alert('Error', error.message);
+              setDeleting(false);
+            } else {
+              router.back();
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
+  if (!item) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.text }}>Item not found</Text>
+        <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
+          <Text style={{ color: '#3b82f6' }}>Go back</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const gameColor = GAME_COLORS[item.game_system as GameSystem] || GAME_COLORS.other;
   const statusColor = getStatusColor(item.status);
+  const gameLabel = GAME_SYSTEM_LABELS[item.game_system as GameSystem] || 'Other';
+  const statusLabel = STATUS_LABELS[item.status as ItemStatus] || item.status;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -94,15 +93,17 @@ export default function ItemDetailScreen() {
           <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
           <View style={styles.tagsRow}>
             <View style={[styles.gameTag, { backgroundColor: gameColor + '20' }]}>
-              <Text style={[styles.tagText, { color: gameColor }]}>{item.game}</Text>
+              <Text style={[styles.tagText, { color: gameColor }]}>{gameLabel}</Text>
             </View>
             <View style={[styles.statusTag, { backgroundColor: statusColor + '20' }]}>
               <Text style={[styles.tagText, { color: statusColor }]}>
-                {STATUS_LABELS[item.status] || item.status}
+                {statusLabel}
               </Text>
             </View>
           </View>
-          <Text style={[styles.faction, { color: colors.textSecondary }]}>{item.faction}</Text>
+          <Text style={[styles.faction, { color: colors.textSecondary }]}>
+            {item.faction || 'No faction'}
+          </Text>
         </View>
 
         {/* Quick Stats */}
@@ -113,12 +114,16 @@ export default function ItemDetailScreen() {
           </View>
           <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
           <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: colors.text }]}>${item.purchasePrice}</Text>
+            <Text style={[styles.statValue, { color: colors.text }]}>
+              ${item.purchase_price?.toFixed(2) || '0.00'}
+            </Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Paid</Text>
           </View>
           <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
           <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: '#10b981' }]}>${item.currentValue}</Text>
+            <Text style={[styles.statValue, { color: '#10b981' }]}>
+              ${item.current_value?.toFixed(2) || item.purchase_price?.toFixed(2) || '0.00'}
+            </Text>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Value</Text>
           </View>
         </View>
@@ -130,23 +135,32 @@ export default function ItemDetailScreen() {
           <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
             <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Status</Text>
             <Text style={[styles.detailValue, { color: statusColor }]}>
-              {STATUS_LABELS[item.status] || item.status}
+              {statusLabel}
             </Text>
           </View>
 
           <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
             <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Game System</Text>
-            <Text style={[styles.detailValue, { color: colors.text }]}>{item.game}</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>{gameLabel}</Text>
           </View>
 
           <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
             <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Faction</Text>
-            <Text style={[styles.detailValue, { color: colors.text }]}>{item.faction}</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>{item.faction || 'None'}</Text>
           </View>
 
           <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
             <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Purchase Date</Text>
-            <Text style={[styles.detailValue, { color: colors.text }]}>{item.purchaseDate}</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>
+              {item.purchase_date || 'Not set'}
+            </Text>
+          </View>
+
+          <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Added</Text>
+            <Text style={[styles.detailValue, { color: colors.text }]}>
+              {new Date(item.created_at).toLocaleDateString()}
+            </Text>
           </View>
         </View>
 
@@ -160,13 +174,19 @@ export default function ItemDetailScreen() {
 
         {/* Actions */}
         <View style={styles.actionsSection}>
-          <Pressable style={[styles.editButton, { backgroundColor: colors.text }]}>
-            <FontAwesome name="pencil" size={16} color={colors.background} />
-            <Text style={[styles.editButtonText, { color: colors.background }]}>Edit Item</Text>
-          </Pressable>
-          <Pressable style={[styles.deleteButton, { borderColor: '#ef4444' }]}>
-            <FontAwesome name="trash" size={16} color="#ef4444" />
-            <Text style={styles.deleteButtonText}>Delete</Text>
+          <Pressable
+            style={[styles.deleteButton, { borderColor: '#ef4444' }]}
+            onPress={handleDelete}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <ActivityIndicator color="#ef4444" />
+            ) : (
+              <>
+                <FontAwesome name="trash" size={16} color="#ef4444" />
+                <Text style={styles.deleteButtonText}>Delete</Text>
+              </>
+            )}
           </Pressable>
         </View>
 
@@ -178,11 +198,11 @@ export default function ItemDetailScreen() {
 
 function getStatusColor(status: string): string {
   switch (status) {
-    case 'Painted': return '#10b981';
-    case 'Based': return '#8b5cf6';
-    case 'Primed': return '#6366f1';
-    case 'Assembled': return '#f59e0b';
-    case 'New in Box': return '#ef4444';
+    case 'painted': return '#10b981';
+    case 'based': return '#8b5cf6';
+    case 'primed': return '#6366f1';
+    case 'assembled': return '#f59e0b';
+    case 'nib': return '#ef4444';
     default: return '#9ca3af';
   }
 }
@@ -190,6 +210,10 @@ function getStatusColor(status: string): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -315,25 +339,12 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: 'transparent',
   },
-  editButton: {
+  deleteButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-  },
-  editButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  deleteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
     borderRadius: 12,
     borderWidth: 1,
     gap: 8,
