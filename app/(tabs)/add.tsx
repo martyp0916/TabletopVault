@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -8,6 +8,8 @@ import { useAuth } from '@/lib/auth';
 import { useCollections } from '@/hooks/useCollections';
 import { useItems } from '@/hooks/useItems';
 import { GameSystem, ItemStatus, GAME_SYSTEM_LABELS, STATUS_LABELS } from '@/types/database';
+import * as ImagePicker from 'expo-image-picker';
+import { supabase } from '@/lib/supabase';
 
 const GAME_SYSTEMS: { value: GameSystem; label: string }[] = [
   { value: 'wh40k', label: 'Warhammer 40K' },
@@ -42,6 +44,92 @@ export default function AddScreen() {
   const [notes, setNotes] = useState('');
   const [selectedCollection, setSelectedCollection] = useState('');
   const [saving, setSaving] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  const pickImage = async (useCamera: boolean) => {
+    // Request permissions
+    if (useCamera) {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permission is required to take photos.');
+        return;
+      }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Photo library permission is required to select photos.');
+        return;
+      }
+    }
+
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.8,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.8,
+        });
+
+    if (!result.canceled && result.assets[0]) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  };
+
+  const showImageOptions = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Take Photo', 'Choose from Library'],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) pickImage(true);
+          if (buttonIndex === 2) pickImage(false);
+        }
+      );
+    } else {
+      Alert.alert('Add Photo', 'Choose an option', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Take Photo', onPress: () => pickImage(true) },
+        { text: 'Choose from Library', onPress: () => pickImage(false) },
+      ]);
+    }
+  };
+
+  const uploadImage = async (itemId: string): Promise<string | null> => {
+    if (!selectedImage || !user) return null;
+
+    try {
+      const response = await fetch(selectedImage);
+      const blob = await response.blob();
+
+      const fileExt = selectedImage.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${user.id}/${itemId}/${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('item-images')
+        .upload(fileName, blob, {
+          contentType: `image/${fileExt}`,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        return null;
+      }
+
+      return fileName;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      return null;
+    }
+  };
 
   // Auto-select first collection
   useEffect(() => {
@@ -58,6 +146,7 @@ export default function AddScreen() {
     setStatus('');
     setPrice('');
     setNotes('');
+    setSelectedImage(null);
   };
 
   const handleSubmit = async () => {
@@ -78,7 +167,7 @@ export default function AddScreen() {
 
     setSaving(true);
 
-    const { error } = await createItem({
+    const { data: newItem, error } = await createItem({
       collection_id: selectedCollection,
       name: name.trim(),
       game_system: gameSystem,
@@ -89,17 +178,32 @@ export default function AddScreen() {
       notes: notes.trim() || undefined,
     });
 
+    if (error) {
+      setSaving(false);
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    // Upload image if selected
+    if (selectedImage && newItem) {
+      const imagePath = await uploadImage(newItem.id);
+      if (imagePath) {
+        // Save image reference to item_images table
+        await supabase.from('item_images').insert({
+          item_id: newItem.id,
+          image_url: imagePath,
+          is_primary: true,
+        });
+      }
+    }
+
     setSaving(false);
 
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      Alert.alert('Success', 'Item added to your collection!', [
-        { text: 'Add Another', onPress: resetForm },
-        { text: 'View Collection', onPress: () => router.push(`/collection/${selectedCollection}`) },
-      ]);
-      resetForm();
-    }
+    Alert.alert('Success', 'Item added to your collection!', [
+      { text: 'Add Another', onPress: resetForm },
+      { text: 'View Collection', onPress: () => router.push(`/collection/${selectedCollection}`) },
+    ]);
+    resetForm();
   };
 
   return (
@@ -129,10 +233,27 @@ export default function AddScreen() {
       </View>
 
       {/* Photo Section */}
-      <Pressable style={[styles.photoSection, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <FontAwesome name="camera" size={32} color={colors.textSecondary} />
-        <Text style={[styles.photoText, { color: colors.textSecondary }]}>Add Photo</Text>
+      <Pressable
+        style={[styles.photoSection, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={showImageOptions}
+      >
+        {selectedImage ? (
+          <Image source={{ uri: selectedImage }} style={styles.selectedImage} />
+        ) : (
+          <>
+            <FontAwesome name="camera" size={32} color={colors.textSecondary} />
+            <Text style={[styles.photoText, { color: colors.textSecondary }]}>Add Photo</Text>
+          </>
+        )}
       </Pressable>
+      {selectedImage && (
+        <Pressable
+          style={styles.removePhotoButton}
+          onPress={() => setSelectedImage(null)}
+        >
+          <Text style={styles.removePhotoText}>Remove Photo</Text>
+        </Pressable>
+      )}
 
       {/* Form Fields */}
       <View style={styles.form}>
@@ -380,6 +501,21 @@ const styles = StyleSheet.create({
   },
   photoText: {
     fontSize: 16,
+    fontWeight: '500',
+  },
+  selectedImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 14,
+  },
+  removePhotoButton: {
+    alignSelf: 'center',
+    marginTop: 8,
+    padding: 8,
+  },
+  removePhotoText: {
+    color: '#ef4444',
+    fontSize: 14,
     fontWeight: '500',
   },
   form: {

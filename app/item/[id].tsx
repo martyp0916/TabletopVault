@@ -1,9 +1,9 @@
-import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Image } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useItem } from '@/hooks/useItems';
 import { supabase } from '@/lib/supabase';
 import { GAME_COLORS, STATUS_LABELS, GAME_SYSTEM_LABELS, GameSystem, ItemStatus } from '@/types/database';
@@ -12,9 +12,37 @@ export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams();
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { item, loading, error } = useItem(id as string);
+
+  // Fetch item image
+  useEffect(() => {
+    const fetchImage = async () => {
+      if (!id) return;
+
+      const { data: images } = await supabase
+        .from('item_images')
+        .select('image_url')
+        .eq('item_id', id)
+        .eq('is_primary', true)
+        .limit(1);
+
+      if (images && images.length > 0) {
+        // Create signed URL for private bucket
+        const { data: signedUrlData } = await supabase.storage
+          .from('item-images')
+          .createSignedUrl(images[0].image_url, 3600); // 1 hour expiry
+
+        if (signedUrlData?.signedUrl) {
+          setImageUrl(signedUrlData.signedUrl);
+        }
+      }
+    };
+
+    fetchImage();
+  }, [id]);
 
   const handleDelete = () => {
     Alert.alert(
@@ -27,6 +55,20 @@ export default function ItemDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             setDeleting(true);
+
+            // Get image paths to delete from storage
+            const { data: images } = await supabase
+              .from('item_images')
+              .select('image_url')
+              .eq('item_id', id);
+
+            // Delete images from storage
+            if (images && images.length > 0) {
+              const paths = images.map(img => img.image_url);
+              await supabase.storage.from('item-images').remove(paths);
+            }
+
+            // Delete item (item_images will cascade delete due to foreign key)
             const { error } = await supabase
               .from('items')
               .delete()
@@ -82,10 +124,16 @@ export default function ItemDetailScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Photo Placeholder */}
+        {/* Photo Section */}
         <View style={[styles.photoSection, { backgroundColor: colors.card }]}>
-          <FontAwesome name="image" size={48} color={colors.textSecondary} />
-          <Text style={[styles.photoText, { color: colors.textSecondary }]}>No photo yet</Text>
+          {imageUrl ? (
+            <Image source={{ uri: imageUrl }} style={styles.itemImage} resizeMode="cover" />
+          ) : (
+            <>
+              <FontAwesome name="image" size={48} color={colors.textSecondary} />
+              <Text style={[styles.photoText, { color: colors.textSecondary }]}>No photo yet</Text>
+            </>
+          )}
         </View>
 
         {/* Title Section */}
@@ -241,6 +289,11 @@ const styles = StyleSheet.create({
   photoText: {
     marginTop: 8,
     fontSize: 14,
+  },
+  itemImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
   titleSection: {
     paddingHorizontal: 20,
