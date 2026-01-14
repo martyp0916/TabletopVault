@@ -7,6 +7,29 @@
 **Target Games**: Warhammer 40K, Age of Sigmar, Star Wars Legion
 **Tech Stack**: React Native + Expo + TypeScript + Supabase
 **Repository**: https://github.com/martyp0916/TabletopVault
+**Last Updated**: January 2025
+
+---
+
+## Current Status: MVP Complete
+
+The app has a fully functional backend and is ready for testing. All core features are implemented and connected to Supabase.
+
+### What's Working
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| User signup | Working | Email/password auth with email confirmation |
+| User login | Working | Persists session with AsyncStorage |
+| User logout | Working | Clears session and redirects to login |
+| Create collection | Working | Modal form, saves to database |
+| View collections | Working | Grid layout with item counts |
+| Add item | Working | Full form with game/status/price fields |
+| View items | Working | List view in collection detail |
+| View item detail | Working | Shows all item properties |
+| Delete item | Working | With confirmation dialog |
+| Dashboard stats | Working | Real-time from database |
+| Profile page | Working | Shows user info and stats |
 
 ---
 
@@ -14,39 +37,31 @@
 
 ### Completed
 
-- [x] Development environment setup (Node.js, Expo CLI, VS Code)
+- [x] Development environment setup (Node.js v20, Expo CLI, VS Code)
 - [x] Project initialization with Expo Router tabs template
-- [x] Custom color theme system with light/dark mode support
-- [x] All main UI screens built
+- [x] Custom color theme system with light/dark mode toggle
+- [x] All main UI screens built with consistent styling
 - [x] Navigation between screens using Expo Router
 - [x] GitHub repository created and code pushed
 - [x] Supabase project created and configured
-- [x] Database tables set up with Row Level Security
+- [x] Database tables with Row Level Security
+- [x] Fixed profile creation trigger for signup
 - [x] Authentication system (login/signup/logout)
-- [x] Auth context and protected routes
-- [x] Database hooks for collections and items
+- [x] Auth context with protected routes
+- [x] Database hooks for CRUD operations
 - [x] All screens connected to real Supabase data
-
-### Ready for Testing
-
-The app now has a fully functional backend. Users can:
-- Sign up and log in
-- Create collections
-- Add items to collections
-- View item details
-- Delete items
-- View stats on dashboard
-- Log out
 
 ### Future Enhancements
 
-- [ ] Photo upload functionality
+- [ ] Photo upload functionality (camera + gallery)
 - [ ] Edit item functionality
-- [ ] Edit collection functionality
+- [ ] Edit/delete collection functionality
 - [ ] Password reset flow
-- [ ] Profile editing
-- [ ] Export data feature
+- [ ] Profile editing (username, avatar)
+- [ ] Search and filter items
+- [ ] Export data to CSV/PDF
 - [ ] Premium subscription features
+- [ ] Social features (sharing, following)
 
 ---
 
@@ -55,37 +70,38 @@ The app now has a fully functional backend. Users can:
 ```
 TabletopVault/
 ├── app/                          # Expo Router screens
-│   ├── (auth)/                   # Auth screens (login, signup)
-│   │   ├── _layout.tsx
-│   │   ├── login.tsx
-│   │   └── signup.tsx
+│   ├── (auth)/                   # Auth screens
+│   │   ├── _layout.tsx           # Auth stack layout
+│   │   ├── login.tsx             # Login form
+│   │   └── signup.tsx            # Signup form
 │   ├── (tabs)/                   # Main tab navigation
-│   │   ├── _layout.tsx           # Tab bar configuration
-│   │   ├── index.tsx             # Home screen (dashboard)
+│   │   ├── _layout.tsx           # Tab bar (Home, Collections, Add, Profile)
+│   │   ├── index.tsx             # Home dashboard
 │   │   ├── collections.tsx       # Collections grid
 │   │   ├── add.tsx               # Add item form
 │   │   └── profile.tsx           # User profile & settings
 │   ├── collection/
-│   │   └── [id].tsx              # Collection detail screen
+│   │   └── [id].tsx              # Collection detail (dynamic route)
 │   ├── item/
-│   │   └── [id].tsx              # Item detail screen
-│   └── _layout.tsx               # Root layout with auth
+│   │   └── [id].tsx              # Item detail (dynamic route)
+│   └── _layout.tsx               # Root layout with AuthProvider
 ├── components/
-│   └── Themed.tsx                # Theme-aware Text/View components
+│   ├── Themed.tsx                # Theme-aware Text/View components
+│   └── useColorScheme.ts         # System color scheme hook
 ├── constants/
-│   └── Colors.ts                 # Light/dark color definitions
+│   └── Colors.ts                 # Light/dark theme colors
 ├── hooks/
-│   ├── useCollections.ts         # Collection CRUD hooks
-│   ├── useItems.ts               # Item CRUD hooks
-│   └── useProfile.ts             # Profile hooks
+│   ├── useCollections.ts         # Collection CRUD operations
+│   ├── useItems.ts               # Item CRUD + stats hooks
+│   └── useProfile.ts             # User profile operations
 ├── lib/
-│   ├── auth.tsx                  # Auth context provider
-│   └── supabase.ts               # Supabase client configuration
+│   ├── auth.tsx                  # AuthContext + useAuth hook
+│   └── supabase.ts               # Supabase client config
 ├── types/
-│   └── database.ts               # TypeScript types for database
+│   └── database.ts               # TypeScript interfaces + constants
 ├── supabase/
-│   └── migrations/               # Database migrations
-├── assets/                       # Images and fonts
+│   └── migrations/               # SQL migration files
+├── assets/                       # Fonts and images
 ├── app.json                      # Expo configuration
 ├── package.json                  # Dependencies
 └── tsconfig.json                 # TypeScript config
@@ -96,102 +112,111 @@ TabletopVault/
 ## Supabase Configuration
 
 **Project URL**: `https://hsqsskxwtknmuehrldlf.supabase.co`
+**Database Password**: `w1MH8S3JEkzeEt0c`
 
 ### Database Tables
 
-| Table | Purpose |
-|-------|---------|
-| `profiles` | User profiles (extends auth.users) |
-| `collections` | User's collections/groups of items |
-| `items` | Individual miniatures/models |
-| `item_images` | Photos attached to items |
+| Table | Columns | Purpose |
+|-------|---------|---------|
+| `profiles` | id, email, username, avatar_url, is_premium, created_at | User profiles (linked to auth.users) |
+| `collections` | id, user_id, name, description, is_public, cover_image_url | Groups of items |
+| `items` | id, collection_id, user_id, name, game_system, faction, quantity, status, purchase_price, current_value, purchase_date, notes | Individual miniatures |
+| `item_images` | id, item_id, image_url, is_primary | Photos for items |
 
 ### Row Level Security Policies
 
-All tables have RLS enabled with policies ensuring:
-- Users can only view/edit their own data
-- Public collections are viewable by all
-- Auto-creates profile on user signup via trigger
+**profiles:**
+- Users can view own profile (SELECT)
+- Users can update own profile (UPDATE)
+- Users can insert own profile (INSERT)
+- Service role can insert profiles (INSERT) - for signup trigger
+
+**collections:**
+- Users can view own collections (SELECT)
+- Users can view public collections (SELECT)
+- Users can create own collections (INSERT)
+- Users can update own collections (UPDATE)
+- Users can delete own collections (DELETE)
+
+**items:**
+- Users can view own items (SELECT)
+- Users can view items in public collections (SELECT)
+- Users can create own items (INSERT)
+- Users can update own items (UPDATE)
+- Users can delete own items (DELETE)
+
+**item_images:**
+- Users can view own item images (SELECT)
+- Users can create own item images (INSERT)
+- Users can delete own item images (DELETE)
+
+### Database Trigger
+
+Auto-creates profile on user signup:
+```sql
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_user();
+```
 
 ---
 
-## Key Features by Screen
+## Key Files Reference
 
-### Login/Signup (`app/(auth)/`)
-- Email/password authentication
-- Form validation
-- Error handling
-- Email confirmation on signup
+### Authentication
 
-### Home (`app/(tabs)/index.tsx`)
-- Stats: total items, battle ready, shame pile
-- "On The Table" section for WIP items
-- Recent activity list
-- Quick action buttons
+**`lib/auth.tsx`** - Auth context provider
+- `AuthProvider` - Wraps app, manages auth state
+- `useAuth()` - Returns { user, session, loading, signUp, signIn, signOut }
 
-### Collections (`app/(tabs)/collections.tsx`)
-- Grid of collection cards
-- Create new collection modal
-- Item counts per collection
-- Navigate to collection detail
+**`lib/supabase.ts`** - Supabase client
+- Configured with project URL and anon key
+- Uses AsyncStorage for session persistence
 
-### Add Item (`app/(tabs)/add.tsx`)
-- Collection picker
-- Game system selector
-- Status selector with color coding
-- Saves to Supabase
+### Database Hooks
 
-### Collection Detail (`app/collection/[id].tsx`)
-- Collection stats
-- Items list with status indicators
-- Navigate to item detail
+**`hooks/useCollections.ts`**
+- `useCollections(userId)` - List all collections
+- `useCollection(id)` - Get single collection
+- `createCollection(name, description)` - Create new
+- `updateCollection(id, updates)` - Update existing
+- `deleteCollection(id)` - Delete
 
-### Item Detail (`app/item/[id].tsx`)
-- Full item information
-- Price/value display
-- Delete functionality
+**`hooks/useItems.ts`**
+- `useItems(userId, collectionId?)` - List items
+- `useItem(id)` - Get single item
+- `useItemStats(userId)` - Get total/battleReady/shamePile counts
+- `useRecentItems(userId, limit)` - Get recent items
+- `createItem(item)` - Create new
+- `updateItem(id, updates)` - Update existing
+- `deleteItem(id)` - Delete
 
-### Profile (`app/(tabs)/profile.tsx`)
-- User info from database
-- Total items and collections stats
-- Settings toggles
-- Logout functionality
+**`hooks/useProfile.ts`**
+- `useProfile(userId)` - Get user profile
+- `updateProfile(updates)` - Update profile
 
----
+### Type Definitions
 
-## Database Types
-
+**`types/database.ts`**
 ```typescript
 type GameSystem = 'wh40k' | 'aos' | 'legion' | 'other';
 type ItemStatus = 'nib' | 'assembled' | 'primed' | 'painted' | 'based';
 
-interface Collection {
-  id: string;
-  user_id: string;
-  name: string;
-  description: string | null;
-  is_public: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-interface Item {
-  id: string;
-  collection_id: string;
-  user_id: string;
-  name: string;
-  game_system: GameSystem;
-  faction: string | null;
-  quantity: number;
-  status: ItemStatus;
-  purchase_price: number | null;
-  current_value: number | null;
-  purchase_date: string | null;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-}
+// Display labels
+GAME_SYSTEM_LABELS: { wh40k: 'Warhammer 40K', aos: 'Age of Sigmar', ... }
+STATUS_LABELS: { nib: 'Shame Pile', painted: 'Battle Ready', ... }
+GAME_COLORS: { wh40k: '#3b82f6', aos: '#f59e0b', ... }
+STATUS_COLORS: { nib: '#ef4444', painted: '#10b981', ... }
 ```
+
+---
+
+## Issues Resolved
+
+### "Database error saving new user" on signup
+**Cause**: RLS policies blocked the trigger from inserting into profiles table
+**Fix**: Added INSERT policies for profiles table and recreated trigger with SECURITY DEFINER
 
 ---
 
@@ -201,19 +226,54 @@ interface Item {
 # Start development server
 npx expo start
 
-# Start with tunnel (for testing on phone)
+# Start with tunnel (for phone testing)
 npx expo start --tunnel
 
 # Install dependencies
 npm install
+
+# Connect to database (for debugging)
+node -e "const { Client } = require('pg'); ..."
+```
+
+---
+
+## Dependencies
+
+```json
+{
+  "@expo/vector-icons": "^14.1.0",
+  "@react-native-async-storage/async-storage": "^2.1.2",
+  "@supabase/supabase-js": "^2.49.8",
+  "expo": "~53.0.0",
+  "expo-router": "~5.0.0",
+  "react": "19.0.0",
+  "react-native": "0.81.5",
+  "pg": "^8.x" (dev dependency for database scripts)
+}
 ```
 
 ---
 
 ## Accounts & Services
 
-| Service | Purpose | Account |
-|---------|---------|---------|
-| GitHub | Code repository | martyp0916 |
-| Supabase | Backend/database | (created) |
-| Expo | Build & deploy | (needed for publishing) |
+| Service | Purpose | Account/URL |
+|---------|---------|-------------|
+| GitHub | Code repository | github.com/martyp0916/TabletopVault |
+| Supabase | Backend/database | hsqsskxwtknmuehrldlf.supabase.co |
+| Expo | Build & deploy | (create when ready to publish) |
+| Apple Developer | iOS App Store | (create when ready - $99/year) |
+| Google Play | Android Store | (create when ready - $25 one-time) |
+
+---
+
+## Testing the App
+
+1. Run `npx expo start --tunnel` in the project folder
+2. Scan QR code with Expo Go on iPhone
+3. Sign up with email/password
+4. Check email for confirmation link (required by Supabase)
+5. Log in after confirming
+6. Create a collection
+7. Add items to collection
+8. View dashboard stats update in real-time
