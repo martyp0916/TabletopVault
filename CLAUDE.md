@@ -11,23 +11,24 @@
 
 ---
 
-## Current Status: MVP Complete
+## Current Status: MVP Complete + Photo Upload
 
-The app has a fully functional backend and is ready for testing. All core features are implemented and connected to Supabase.
+The app has a fully functional backend and is ready for testing. All core features are implemented and connected to Supabase, including photo upload functionality.
 
 ### What's Working
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| User signup | Working | Email/password auth with email confirmation |
+| User signup | Working | Email/password auth (email confirmation disabled for dev) |
 | User login | Working | Persists session with AsyncStorage |
 | User logout | Working | Clears session and redirects to login |
 | Create collection | Working | Modal form, saves to database |
 | View collections | Working | Grid layout with item counts |
 | Add item | Working | Full form with game/status/price fields |
+| **Photo upload** | Working | Camera + gallery picker, uploads to Supabase Storage |
 | View items | Working | List view in collection detail |
-| View item detail | Working | Shows all item properties |
-| Delete item | Working | With confirmation dialog |
+| View item detail | Working | Shows all item properties + photo |
+| Delete item | Working | With confirmation dialog, cleans up photos |
 | Dashboard stats | Working | Real-time from database |
 | Profile page | Working | Shows user info and stats |
 
@@ -50,10 +51,12 @@ The app has a fully functional backend and is ready for testing. All core featur
 - [x] Auth context with protected routes
 - [x] Database hooks for CRUD operations
 - [x] All screens connected to real Supabase data
+- [x] Photo upload functionality (camera + gallery)
+- [x] Supabase Storage bucket for private image storage
+- [x] Signed URLs for secure image viewing
 
 ### Future Enhancements
 
-- [ ] Photo upload functionality (camera + gallery)
 - [ ] Edit item functionality
 - [ ] Edit/delete collection functionality
 - [ ] Password reset flow
@@ -62,6 +65,7 @@ The app has a fully functional backend and is ready for testing. All core featur
 - [ ] Export data to CSV/PDF
 - [ ] Premium subscription features
 - [ ] Social features (sharing, following)
+- [ ] Make images public option (currently all private)
 
 ---
 
@@ -78,12 +82,12 @@ TabletopVault/
 │   │   ├── _layout.tsx           # Tab bar (Home, Collections, Add, Profile)
 │   │   ├── index.tsx             # Home dashboard
 │   │   ├── collections.tsx       # Collections grid
-│   │   ├── add.tsx               # Add item form
+│   │   ├── add.tsx               # Add item form + photo picker
 │   │   └── profile.tsx           # User profile & settings
 │   ├── collection/
 │   │   └── [id].tsx              # Collection detail (dynamic route)
 │   ├── item/
-│   │   └── [id].tsx              # Item detail (dynamic route)
+│   │   └── [id].tsx              # Item detail + photo display (dynamic route)
 │   └── _layout.tsx               # Root layout with AuthProvider
 ├── components/
 │   ├── Themed.tsx                # Theme-aware Text/View components
@@ -123,6 +127,18 @@ TabletopVault/
 | `items` | id, collection_id, user_id, name, game_system, faction, quantity, status, purchase_price, current_value, purchase_date, notes | Individual miniatures |
 | `item_images` | id, item_id, image_url, is_primary | Photos for items |
 
+### Supabase Storage
+
+**Bucket**: `item-images` (private)
+- Stores all item photos
+- Images organized by: `{user_id}/{item_id}/{timestamp}.{ext}`
+- Access via signed URLs (1 hour expiry)
+
+**Storage Policies**:
+- Users can upload (INSERT) - authenticated users
+- Users can view (SELECT) - authenticated users
+- Users can delete (DELETE) - authenticated users
+
 ### Row Level Security Policies
 
 **profiles:**
@@ -160,6 +176,11 @@ CREATE TRIGGER on_auth_user_created
   EXECUTE FUNCTION public.handle_new_user();
 ```
 
+### Auth Settings
+
+- Email confirmation: **Disabled** (for development)
+- To re-enable: Supabase Dashboard → Authentication → Providers → Email → Toggle "Confirm email"
+
 ---
 
 ## Key Files Reference
@@ -188,13 +209,27 @@ CREATE TRIGGER on_auth_user_created
 - `useItem(id)` - Get single item
 - `useItemStats(userId)` - Get total/battleReady/shamePile counts
 - `useRecentItems(userId, limit)` - Get recent items
-- `createItem(item)` - Create new
+- `createItem(item)` - Create new (returns { data, error })
 - `updateItem(id, updates)` - Update existing
 - `deleteItem(id)` - Delete
 
 **`hooks/useProfile.ts`**
 - `useProfile(userId)` - Get user profile
 - `updateProfile(updates)` - Update profile
+
+### Photo Upload (app/(tabs)/add.tsx)
+
+- `pickImage(useCamera)` - Opens camera or gallery
+- `showImageOptions()` - Shows action sheet to choose camera/gallery
+- `uploadImage(itemId)` - Uploads to Supabase Storage, returns file path
+- Images saved to `item_images` table with `is_primary: true`
+
+### Photo Display (app/item/[id].tsx)
+
+- Fetches primary image from `item_images` table
+- Creates signed URL for private bucket access
+- Displays image or placeholder if none exists
+- Cleans up storage on item deletion
 
 ### Type Definitions
 
@@ -217,6 +252,10 @@ STATUS_COLORS: { nib: '#ef4444', painted: '#10b981', ... }
 ### "Database error saving new user" on signup
 **Cause**: RLS policies blocked the trigger from inserting into profiles table
 **Fix**: Added INSERT policies for profiles table and recreated trigger with SECURITY DEFINER
+
+### Email confirmation link not loading
+**Cause**: Supabase redirect URL not configured for mobile app
+**Fix**: Disabled email confirmation for development (can re-enable for production with deep linking)
 
 ---
 
@@ -246,6 +285,7 @@ node -e "const { Client } = require('pg'); ..."
   "@react-native-async-storage/async-storage": "^2.1.2",
   "@supabase/supabase-js": "^2.49.8",
   "expo": "~53.0.0",
+  "expo-image-picker": "~16.1.0",
   "expo-router": "~5.0.0",
   "react": "19.0.0",
   "react-native": "0.81.5",
@@ -260,7 +300,7 @@ node -e "const { Client } = require('pg'); ..."
 | Service | Purpose | Account/URL |
 |---------|---------|-------------|
 | GitHub | Code repository | github.com/martyp0916/TabletopVault |
-| Supabase | Backend/database | hsqsskxwtknmuehrldlf.supabase.co |
+| Supabase | Backend/database/storage | hsqsskxwtknmuehrldlf.supabase.co |
 | Expo | Build & deploy | (create when ready to publish) |
 | Apple Developer | iOS App Store | (create when ready - $99/year) |
 | Google Play | Android Store | (create when ready - $25 one-time) |
@@ -271,9 +311,9 @@ node -e "const { Client } = require('pg'); ..."
 
 1. Run `npx expo start --tunnel` in the project folder
 2. Scan QR code with Expo Go on iPhone
-3. Sign up with email/password
-4. Check email for confirmation link (required by Supabase)
-5. Log in after confirming
-6. Create a collection
-7. Add items to collection
+3. Sign up with email/password (no confirmation needed)
+4. Log in immediately
+5. Create a collection
+6. Add items to collection (try adding a photo!)
+7. View item details to see the photo
 8. View dashboard stats update in real-time
