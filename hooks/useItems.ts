@@ -154,39 +154,40 @@ export function useItemStats(userId: string | undefined) {
   });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchStats = useCallback(async () => {
     if (!userId) {
       setLoading(false);
       return;
     }
 
-    const fetchStats = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('items')
-          .select('status, quantity')
-          .eq('user_id', userId);
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('items')
+        .select('status, quantity')
+        .eq('user_id', userId);
 
-        if (error) throw error;
+      if (error) throw error;
 
-        const total = data?.reduce((sum, item) => sum + (item.quantity || 1), 0) || 0;
-        const battleReady = data?.filter(i => i.status === 'painted' || i.status === 'based')
-          .reduce((sum, item) => sum + (item.quantity || 1), 0) || 0;
-        const shamePile = data?.filter(i => i.status === 'nib')
-          .reduce((sum, item) => sum + (item.quantity || 1), 0) || 0;
+      const total = data?.reduce((sum, item) => sum + (item.quantity || 1), 0) || 0;
+      const battleReady = data?.filter(i => i.status === 'painted' || i.status === 'based')
+        .reduce((sum, item) => sum + (item.quantity || 1), 0) || 0;
+      const shamePile = data?.filter(i => i.status === 'nib')
+        .reduce((sum, item) => sum + (item.quantity || 1), 0) || 0;
 
-        setStats({ total, battleReady, shamePile });
-      } catch (e) {
-        console.error('Error fetching stats:', e);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchStats();
+      setStats({ total, battleReady, shamePile });
+    } catch (e) {
+      console.error('Error fetching stats:', e);
+    } finally {
+      setLoading(false);
+    }
   }, [userId]);
 
-  return { stats, loading };
+  useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  return { stats, loading, refresh: fetchStats };
 }
 
 // Recent items hook
@@ -194,32 +195,33 @@ export function useRecentItems(userId: string | undefined, limit: number = 5) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchRecent = useCallback(async () => {
     if (!userId) {
       setLoading(false);
       return;
     }
 
-    const fetchRecent = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('items')
-          .select('*')
-          .eq('user_id', userId)
-          .order('updated_at', { ascending: false })
-          .limit(limit);
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('items')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false })
+        .limit(limit);
 
-        if (error) throw error;
-        setItems(data || []);
-      } catch (e) {
-        console.error('Error fetching recent items:', e);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRecent();
+      if (error) throw error;
+      setItems(data || []);
+    } catch (e) {
+      console.error('Error fetching recent items:', e);
+    } finally {
+      setLoading(false);
+    }
   }, [userId, limit]);
 
-  return { items, loading };
+  useEffect(() => {
+    fetchRecent();
+  }, [fetchRecent]);
+
+  return { items, loading, refresh: fetchRecent };
 }

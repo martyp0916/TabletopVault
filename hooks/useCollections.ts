@@ -99,32 +99,32 @@ export function useCollection(collectionId: string | undefined) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const fetchCollection = useCallback(async () => {
     if (!collectionId) {
       setLoading(false);
       return;
     }
 
-    const fetchCollection = async () => {
-      try {
-        setLoading(true);
-        const { data, error } = await supabase
-          .from('collections')
-          .select('*')
-          .eq('id', collectionId)
-          .single();
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('collections')
+        .select('*')
+        .eq('id', collectionId)
+        .single();
 
-        if (error) throw error;
-        setCollection(data);
-      } catch (e: any) {
-        setError(e.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchCollection();
+      if (error) throw error;
+      setCollection(data);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }, [collectionId]);
 
-  return { collection, loading, error };
+  useEffect(() => {
+    fetchCollection();
+  }, [fetchCollection]);
+
+  return { collection, loading, error, refresh: fetchCollection };
 }

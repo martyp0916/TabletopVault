@@ -1,9 +1,9 @@
-import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Image } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Image, RefreshControl } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useItem } from '@/hooks/useItems';
 import { supabase } from '@/lib/supabase';
 import { GAME_COLORS, STATUS_LABELS, GAME_SYSTEM_LABELS, GameSystem, ItemStatus } from '@/types/database';
@@ -13,36 +13,43 @@ export default function ItemDetailScreen() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
-  const { item, loading, error } = useItem(id as string);
+  const { item, loading, error, refresh: refreshItem } = useItem(id as string);
 
   // Fetch item image
-  useEffect(() => {
-    const fetchImage = async () => {
-      if (!id) return;
+  const fetchImage = useCallback(async () => {
+    if (!id) return;
 
-      const { data: images } = await supabase
-        .from('item_images')
-        .select('image_url')
-        .eq('item_id', id)
-        .eq('is_primary', true)
-        .limit(1);
+    const { data: images } = await supabase
+      .from('item_images')
+      .select('image_url')
+      .eq('item_id', id)
+      .eq('is_primary', true)
+      .limit(1);
 
-      if (images && images.length > 0) {
-        // Create signed URL for private bucket
-        const { data: signedUrlData } = await supabase.storage
-          .from('item-images')
-          .createSignedUrl(images[0].image_url, 3600); // 1 hour expiry
+    if (images && images.length > 0) {
+      // Create signed URL for private bucket
+      const { data: signedUrlData } = await supabase.storage
+        .from('item-images')
+        .createSignedUrl(images[0].image_url, 3600); // 1 hour expiry
 
-        if (signedUrlData?.signedUrl) {
-          setImageUrl(signedUrlData.signedUrl);
-        }
+      if (signedUrlData?.signedUrl) {
+        setImageUrl(signedUrlData.signedUrl);
       }
-    };
-
-    fetchImage();
+    }
   }, [id]);
+
+  useEffect(() => {
+    fetchImage();
+  }, [fetchImage]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([refreshItem(), fetchImage()]);
+    setRefreshing(false);
+  }, [refreshItem, fetchImage]);
 
   const handleDelete = () => {
     Alert.alert(
@@ -123,7 +130,16 @@ export default function ItemDetailScreen() {
         </Pressable>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.textSecondary}
+          />
+        }
+      >
         {/* Photo Section */}
         <View style={[styles.photoSection, { backgroundColor: colors.card }]}>
           {imageUrl ? (

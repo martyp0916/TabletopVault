@@ -1,12 +1,24 @@
-import { StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator, TextInput, Modal } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator, TextInput, Modal, RefreshControl } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useCollections } from '@/hooks/useCollections';
 import { supabase } from '@/lib/supabase';
+const GAME_LIST = [
+  'Battle Tech',
+  'Bolt Action',
+  'Halo Flashpoint',
+  'Horus Heresy',
+  'Marvel Crisis Protocol',
+  'Star Wars Legion',
+  'Star Wars Shatterpoint',
+  'Warhammer 40K',
+  'Warhammer 40K: Kill Team',
+  'Warhammer Age of Sigmar',
+];
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48 - 12) / 2;
@@ -20,7 +32,8 @@ const COLLECTION_COLORS = [
 export default function CollectionsScreen() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [selectedGame, setSelectedGame] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
   const [newDescription, setNewDescription] = useState('');
   const [creating, setCreating] = useState(false);
   const [itemCounts, setItemCounts] = useState<Record<string, number>>({});
@@ -28,35 +41,44 @@ export default function CollectionsScreen() {
   const colors = isDarkMode ? Colors.dark : Colors.light;
   const { user } = useAuth();
   const { collections, loading, createCollection, refresh } = useCollections(user?.id);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Fetch item counts for each collection
-  useEffect(() => {
+  const fetchCounts = useCallback(async () => {
     if (collections.length > 0) {
-      const fetchCounts = async () => {
-        const counts: Record<string, number> = {};
-        for (const col of collections) {
-          const { count } = await supabase
-            .from('items')
-            .select('*', { count: 'exact', head: true })
-            .eq('collection_id', col.id);
-          counts[col.id] = count || 0;
-        }
-        setItemCounts(counts);
-      };
-      fetchCounts();
+      const counts: Record<string, number> = {};
+      for (const col of collections) {
+        const { count } = await supabase
+          .from('items')
+          .select('*', { count: 'exact', head: true })
+          .eq('collection_id', col.id);
+        counts[col.id] = count || 0;
+      }
+      setItemCounts(counts);
     }
   }, [collections]);
 
+  useEffect(() => {
+    fetchCounts();
+  }, [fetchCounts]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refresh();
+    await fetchCounts();
+    setRefreshing(false);
+  }, [refresh, fetchCounts]);
+
   const handleCreateCollection = async () => {
-    if (!newName.trim()) return;
+    if (!selectedGame) return;
 
     setCreating(true);
-    const { error } = await createCollection(newName.trim(), newDescription.trim() || undefined);
+    const { error } = await createCollection(selectedGame, newDescription.trim() || undefined);
     setCreating(false);
 
     if (!error) {
       setShowModal(false);
-      setNewName('');
+      setSelectedGame('');
       setNewDescription('');
     }
   };
@@ -69,6 +91,13 @@ export default function CollectionsScreen() {
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
     >
       {/* Header */}
       <View style={styles.header}>
@@ -160,14 +189,14 @@ export default function CollectionsScreen() {
       >
         <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           <View style={styles.modalHeader}>
-            <Pressable onPress={() => setShowModal(false)}>
+            <Pressable onPress={() => { setShowModal(false); setShowDropdown(false); }}>
               <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
             </Pressable>
             <Text style={[styles.modalTitle, { color: colors.text }]}>New Collection</Text>
-            <Pressable onPress={handleCreateCollection} disabled={creating || !newName.trim()}>
+            <Pressable onPress={handleCreateCollection} disabled={creating || !selectedGame}>
               <Text style={[
                 styles.modalSave,
-                { color: newName.trim() ? '#3b82f6' : colors.textSecondary }
+                { color: selectedGame ? '#3b82f6' : colors.textSecondary }
               ]}>
                 {creating ? 'Saving...' : 'Save'}
               </Text>
@@ -176,15 +205,54 @@ export default function CollectionsScreen() {
 
           <View style={styles.modalContent}>
             <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.textSecondary }]}>Name</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-                placeholder="e.g., Space Marines, Pile of Shame"
-                placeholderTextColor={colors.textSecondary}
-                value={newName}
-                onChangeText={setNewName}
-                autoFocus
-              />
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Game</Text>
+              <Pressable
+                style={[styles.dropdown, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => setShowDropdown(!showDropdown)}
+              >
+                <Text style={[
+                  styles.dropdownText,
+                  { color: selectedGame ? colors.text : colors.textSecondary }
+                ]}>
+                  {selectedGame || 'Select a game...'}
+                </Text>
+                <FontAwesome
+                  name={showDropdown ? 'chevron-up' : 'chevron-down'}
+                  size={14}
+                  color={colors.textSecondary}
+                />
+              </Pressable>
+
+              {showDropdown && (
+                <View style={[styles.dropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled>
+                    {GAME_LIST.map((game) => (
+                      <Pressable
+                        key={game}
+                        style={[
+                          styles.dropdownItem,
+                          selectedGame === game && styles.dropdownItemSelected,
+                          { borderBottomColor: colors.border }
+                        ]}
+                        onPress={() => {
+                          setSelectedGame(game);
+                          setShowDropdown(false);
+                        }}
+                      >
+                        <Text style={[
+                          styles.dropdownItemText,
+                          { color: selectedGame === game ? '#3b82f6' : colors.text }
+                        ]}>
+                          {game}
+                        </Text>
+                        {selectedGame === game && (
+                          <FontAwesome name="check" size={14} color="#3b82f6" />
+                        )}
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
             </View>
 
             <View style={styles.inputGroup}>
@@ -355,6 +423,41 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  dropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 52,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+  },
+  dropdownText: {
+    fontSize: 16,
+  },
+  dropdownList: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dropdownScroll: {
+    maxHeight: 250,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+  },
+  dropdownItemSelected: {
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  dropdownItemText: {
+    fontSize: 16,
   },
   input: {
     height: 52,

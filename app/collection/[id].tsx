@@ -1,11 +1,11 @@
-import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
-import { useCollection } from '@/hooks/useCollections';
+import { useCollection, useCollections } from '@/hooks/useCollections';
 import { useItems } from '@/hooks/useItems';
 import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus } from '@/types/database';
 
@@ -15,10 +15,43 @@ export default function CollectionDetailScreen() {
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user } = useAuth();
-  const { collection, loading: collectionLoading } = useCollection(id as string);
-  const { items, loading: itemsLoading, deleteItem } = useItems(user?.id, id as string);
+  const { collection, loading: collectionLoading, refresh: refreshCollection } = useCollection(id as string);
+  const { items, loading: itemsLoading, deleteItem, refresh: refreshItems } = useItems(user?.id, id as string);
+  const { deleteCollection } = useCollections(user?.id);
+  const [refreshing, setRefreshing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const loading = collectionLoading || itemsLoading;
+
+  const handleDeleteCollection = () => {
+    Alert.alert(
+      'Delete Collection',
+      `Are you sure you want to delete "${collection?.name}"? All items in this collection will also be deleted. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            const { error } = await deleteCollection(id as string);
+            if (error) {
+              Alert.alert('Error', error.message);
+              setDeleting(false);
+            } else {
+              router.back();
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([refreshCollection(), refreshItems()]);
+    setRefreshing(false);
+  }, [refreshCollection, refreshItems]);
 
   // Calculate stats
   const battleReadyCount = items.filter(i => i.status === 'painted' || i.status === 'based').length;
@@ -61,7 +94,16 @@ export default function CollectionDetailScreen() {
         </Pressable>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.textSecondary}
+          />
+        }
+      >
         {/* Collection Info */}
         <View style={styles.infoSection}>
           <View style={[styles.colorBar, { backgroundColor: '#3b82f6' }]} />
@@ -139,6 +181,24 @@ export default function CollectionDetailScreen() {
               </Pressable>
             ))
           )}
+        </View>
+
+        {/* Delete Collection Button */}
+        <View style={styles.deleteSection}>
+          <Pressable
+            style={[styles.deleteButton, { borderColor: '#ef4444' }]}
+            onPress={handleDeleteCollection}
+            disabled={deleting}
+          >
+            {deleting ? (
+              <ActivityIndicator color="#ef4444" />
+            ) : (
+              <>
+                <FontAwesome name="trash" size={16} color="#ef4444" />
+                <Text style={styles.deleteButtonText}>Delete Collection</Text>
+              </>
+            )}
+          </Pressable>
         </View>
 
         <View style={{ height: 100 }} />
@@ -286,5 +346,25 @@ const styles = StyleSheet.create({
   itemStatus: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  deleteSection: {
+    paddingHorizontal: 20,
+    marginTop: 32,
+    backgroundColor: 'transparent',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8,
+    backgroundColor: 'transparent',
+  },
+  deleteButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#ef4444',
   },
 });

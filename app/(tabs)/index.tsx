@@ -1,170 +1,192 @@
-import { StyleSheet, ScrollView, Pressable, ActivityIndicator } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useItemStats, useRecentItems } from '@/hooks/useItems';
-import { GAME_COLORS, STATUS_LABELS, GAME_SYSTEM_LABELS, GameSystem, ItemStatus } from '@/types/database';
-
-// Map database values to display values
-const getGameDisplayName = (game: GameSystem): string => {
-  return GAME_SYSTEM_LABELS[game] || 'Other';
-};
-
-const getStatusDisplayName = (status: ItemStatus): string => {
-  return STATUS_LABELS[status] || status;
-};
+import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus } from '@/types/database';
 
 export default function HomeScreen() {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user } = useAuth();
-  const { stats, loading: statsLoading } = useItemStats(user?.id);
-  const { items: recentItems, loading: itemsLoading } = useRecentItems(user?.id, 5);
+  const { stats, loading: statsLoading, refresh: refreshStats } = useItemStats(user?.id);
+  const { items: recentItems, loading: itemsLoading, refresh: refreshItems } = useRecentItems(user?.id, 10);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([refreshStats(), refreshItems()]);
+    setRefreshing(false);
+  }, [refreshStats, refreshItems]);
+
+  // Find items that need painting (shame pile + in progress)
+  const unpaintedItems = recentItems.filter(i => i.status === 'nib' || i.status === 'assembled' || i.status === 'primed');
+  const nextUp = unpaintedItems[0];
+
+  // Calculate paint progress percentage
+  const paintProgress = stats.total > 0
+    ? Math.round((stats.battleReady / stats.total) * 100)
+    : 0;
 
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.textSecondary}
+        />
+      }
     >
-      {/* Header */}
+      {/* Minimal Header */}
       <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <Text style={[styles.logo, { color: colors.text }]}>Vault</Text>
-          <Pressable onPress={() => setIsDarkMode(!isDarkMode)}>
-            <FontAwesome
-              name={isDarkMode ? 'sun-o' : 'moon-o'}
-              size={22}
-              color={colors.text}
-            />
-          </Pressable>
-        </View>
-        <Text style={[styles.greeting, { color: colors.textSecondary }]}>
-          Ready to paint, Battle Brother?
+        <Pressable onPress={() => setIsDarkMode(!isDarkMode)}>
+          <FontAwesome
+            name={isDarkMode ? 'sun-o' : 'moon-o'}
+            size={20}
+            color={colors.textSecondary}
+          />
+        </Pressable>
+      </View>
+
+      {/* Hero Shame Pile */}
+      <View style={styles.heroSection}>
+        <Text style={[styles.heroNumber, { color: colors.text }]}>
+          {statsLoading ? '—' : stats.shamePile}
+        </Text>
+        <Text style={[styles.heroLabel, { color: colors.textSecondary }]}>
+          unpainted
         </Text>
       </View>
 
-      {/* Stats Row */}
+      {/* Progress Bar */}
+      <View style={styles.progressSection}>
+        <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+          <View
+            style={[
+              styles.progressFill,
+              {
+                backgroundColor: '#10b981',
+                width: `${paintProgress}%`
+              }
+            ]}
+          />
+        </View>
+        <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+          {paintProgress}% painted
+        </Text>
+      </View>
+
+      {/* Quick Stats Row */}
       <View style={styles.statsRow}>
-        <View style={styles.stat}>
-          <Text style={[styles.statNumber, { color: colors.text }]}>
+        <View style={[styles.statCard, { backgroundColor: colors.card }]}>
+          <Text style={[styles.statCardNumber, { color: colors.text }]}>
             {statsLoading ? '-' : stats.total}
           </Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>total</Text>
+          <Text style={[styles.statCardLabel, { color: colors.textSecondary }]}>
+            total
+          </Text>
         </View>
-        <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.stat}>
-          <Text style={[styles.statNumber, { color: '#10b981' }]}>
+        <View style={[styles.statCard, { backgroundColor: colors.card }]}>
+          <Text style={[styles.statCardNumber, { color: '#10b981' }]}>
             {statsLoading ? '-' : stats.battleReady}
           </Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>battle ready</Text>
-        </View>
-        <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.stat}>
-          <Text style={[styles.statNumber, { color: '#ef4444' }]}>
-            {statsLoading ? '-' : stats.shamePile}
+          <Text style={[styles.statCardLabel, { color: colors.textSecondary }]}>
+            ready
           </Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>shame pile</Text>
         </View>
       </View>
 
-      {/* On The Table - Current WIP */}
-      {recentItems.length > 0 && recentItems.find(i => i.status === 'assembled' || i.status === 'primed') && (
+      {/* What to Paint Next */}
+      {nextUp && (
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>ON THE TABLE</Text>
-          {(() => {
-            const wipItem = recentItems.find(i => i.status === 'assembled' || i.status === 'primed');
-            if (!wipItem) return null;
-            const gameColor = GAME_COLORS[wipItem.game_system] || GAME_COLORS.other;
-            return (
-              <Pressable
-                style={[styles.wipCard, { borderLeftColor: gameColor }]}
-                onPress={() => router.push(`/item/${wipItem.id}`)}
-              >
-                <View style={styles.wipHeader}>
-                  <Text style={[styles.wipName, { color: colors.text }]}>{wipItem.name}</Text>
-                  <View style={[styles.gameTag, { backgroundColor: gameColor + '20' }]}>
-                    <Text style={[styles.gameTagText, { color: gameColor }]}>
-                      {wipItem.game_system === 'wh40k' ? '40K' :
-                       wipItem.game_system === 'aos' ? 'AoS' :
-                       wipItem.game_system === 'legion' ? 'Legion' : 'Other'}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={[styles.wipFaction, { color: colors.textSecondary }]}>
-                  {wipItem.faction || 'No faction'}
-                </Text>
-                <View style={styles.wipFooter}>
-                  <Text style={[styles.wipStatus, { color: colors.textSecondary }]}>
-                    {getStatusDisplayName(wipItem.status)}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })()}
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+            PAINT NEXT
+          </Text>
+          <Pressable
+            style={[styles.nextCard, { backgroundColor: colors.card }]}
+            onPress={() => router.push(`/item/${nextUp.id}`)}
+          >
+            <View style={[styles.nextCardAccent, { backgroundColor: GAME_COLORS[nextUp.game_system] || GAME_COLORS.other }]} />
+            <View style={styles.nextCardContent}>
+              <Text style={[styles.nextCardName, { color: colors.text }]} numberOfLines={1}>
+                {nextUp.name}
+              </Text>
+              <Text style={[styles.nextCardMeta, { color: colors.textSecondary }]}>
+                {nextUp.faction || 'No faction'} · {STATUS_LABELS[nextUp.status] || nextUp.status}
+              </Text>
+            </View>
+            <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
+          </Pressable>
         </View>
       )}
 
-      {/* Quick Actions */}
-      <View style={styles.actions}>
+      {/* Action Buttons */}
+      <View style={styles.actionsSection}>
         <Pressable
-          style={[styles.actionButton, { backgroundColor: colors.text }]}
+          style={[styles.primaryAction, { backgroundColor: colors.text }]}
           onPress={() => router.push('/(tabs)/add')}
         >
-          <Text style={[styles.actionButtonText, { color: colors.background }]}>+ Add to pile</Text>
+          <FontAwesome name="plus" size={16} color={colors.background} />
+          <Text style={[styles.primaryActionText, { color: colors.background }]}>
+            Add Item
+          </Text>
         </Pressable>
         <Pressable
-          style={styles.actionLink}
+          style={[styles.secondaryAction, { borderColor: colors.border }]}
           onPress={() => router.push('/(tabs)/collections')}
         >
-          <Text style={[styles.actionLinkText, { color: colors.text }]}>View armory →</Text>
+          <FontAwesome name="th-large" size={16} color={colors.text} />
+          <Text style={[styles.secondaryActionText, { color: colors.text }]}>
+            Collections
+          </Text>
         </Pressable>
       </View>
 
-      {/* Recent Activity */}
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>RECENT ACTIVITY</Text>
-
-        {itemsLoading ? (
-          <ActivityIndicator style={{ marginTop: 20 }} />
-        ) : recentItems.length === 0 ? (
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            No items yet. Add your first miniature!
+      {/* Recent Items */}
+      {recentItems.length > 0 && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+            RECENT
           </Text>
-        ) : (
-          recentItems.map((item, index) => (
+          {recentItems.slice(0, 5).map((item) => (
             <Pressable
               key={item.id}
-              style={[
-                styles.listItem,
-                index !== recentItems.length - 1 && {
-                  borderBottomWidth: 1,
-                  borderBottomColor: colors.border
-                }
-              ]}
+              style={[styles.recentItem, { borderBottomColor: colors.border }]}
               onPress={() => router.push(`/item/${item.id}`)}
             >
-              {/* Game color indicator */}
-              <View style={[styles.gameIndicator, { backgroundColor: GAME_COLORS[item.game_system] || GAME_COLORS.other }]} />
-
-              <View style={styles.listItemContent}>
-                <View style={styles.listItemTop}>
-                  <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
-                  <Text style={[styles.itemStatus, { color: getStatusColor(item.status) }]}>
-                    {getStatusDisplayName(item.status)}
-                  </Text>
-                </View>
-                <Text style={[styles.itemMeta, { color: colors.textSecondary }]}>
-                  {item.faction || 'No faction'}
-                </Text>
-              </View>
+              <View
+                style={[
+                  styles.statusDot,
+                  { backgroundColor: getStatusColor(item.status) }
+                ]}
+              />
+              <Text style={[styles.recentItemName, { color: colors.text }]} numberOfLines={1}>
+                {item.name}
+              </Text>
             </Pressable>
-          ))
-        )}
-      </View>
+          ))}
+        </View>
+      )}
+
+      {/* Empty State */}
+      {!itemsLoading && recentItems.length === 0 && (
+        <View style={styles.emptyState}>
+          <FontAwesome name="inbox" size={48} color={colors.border} />
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            Your vault is empty
+          </Text>
+          <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
+            Add your first miniature to get started
+          </Text>
+        </View>
+      )}
 
       {/* Bottom Spacing */}
       <View style={{ height: 120 }} />
@@ -188,166 +210,172 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
     paddingHorizontal: 24,
     paddingTop: 16,
     backgroundColor: 'transparent',
   },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  heroSection: {
+    alignItems: 'center',
+    paddingTop: 40,
+    paddingBottom: 20,
+    backgroundColor: 'transparent',
+  },
+  heroNumber: {
+    fontSize: 96,
+    fontWeight: '200',
+    letterSpacing: -4,
+  },
+  heroLabel: {
+    fontSize: 18,
+    fontWeight: '500',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginTop: -8,
+  },
+  progressSection: {
+    paddingHorizontal: 48,
     alignItems: 'center',
     backgroundColor: 'transparent',
   },
-  logo: {
-    fontSize: 28,
-    fontWeight: '600',
-    letterSpacing: -1,
+  progressBar: {
+    width: '100%',
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
   },
-  greeting: {
-    fontSize: 15,
-    marginTop: 4,
-    fontStyle: 'italic',
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  progressText: {
+    fontSize: 13,
+    marginTop: 8,
   },
   statsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 24,
-    paddingVertical: 24,
-    marginTop: 16,
+    gap: 12,
+    marginTop: 32,
     backgroundColor: 'transparent',
   },
-  stat: {
+  statCard: {
     flex: 1,
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    backgroundColor: 'transparent',
   },
-  statNumber: {
-    fontSize: 36,
-    fontWeight: '700',
+  statCardNumber: {
+    fontSize: 28,
+    fontWeight: '600',
   },
-  statLabel: {
+  statCardLabel: {
     fontSize: 12,
     marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   section: {
     paddingHorizontal: 24,
-    marginTop: 24,
+    marginTop: 32,
     backgroundColor: 'transparent',
   },
-  sectionTitle: {
+  sectionLabel: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
     letterSpacing: 1.5,
     marginBottom: 12,
   },
-  wipCard: {
-    paddingVertical: 16,
-    paddingLeft: 16,
-    borderLeftWidth: 4,
-    backgroundColor: 'transparent',
-  },
-  wipHeader: {
+  nextCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'transparent',
+    padding: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
-  wipName: {
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  gameTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  gameTagText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  wipFaction: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  wipFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 12,
-    backgroundColor: 'transparent',
-  },
-  wipStatus: {
-    fontSize: 13,
-  },
-  wipDays: {
-    fontSize: 13,
-  },
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    marginTop: 28,
-    gap: 16,
-    backgroundColor: 'transparent',
-  },
-  actionButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  actionButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  actionLink: {
-    paddingVertical: 12,
-  },
-  actionLinkText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  listItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    backgroundColor: 'transparent',
-  },
-  gameIndicator: {
+  nextCardAccent: {
     width: 4,
-    height: 36,
+    height: 40,
     borderRadius: 2,
-    marginRight: 12,
+    marginRight: 14,
   },
-  listItemContent: {
+  nextCardContent: {
     flex: 1,
     backgroundColor: 'transparent',
   },
-  listItemTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-  },
-  itemName: {
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  itemStatus: {
-    fontSize: 13,
+  nextCardName: {
+    fontSize: 17,
     fontWeight: '600',
   },
-  itemMeta: {
+  nextCardMeta: {
     fontSize: 13,
     marginTop: 2,
   },
-  emptyText: {
+  actionsSection: {
+    flexDirection: 'row',
+    paddingHorizontal: 24,
+    gap: 12,
+    marginTop: 32,
+    backgroundColor: 'transparent',
+  },
+  primaryAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  primaryActionText: {
     fontSize: 15,
-    textAlign: 'center',
-    marginTop: 20,
-    fontStyle: 'italic',
+    fontWeight: '600',
+  },
+  secondaryAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8,
+  },
+  secondaryActionText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  recentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 12,
+  },
+  recentItemName: {
+    fontSize: 15,
+    flex: 1,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingHorizontal: 24,
+    backgroundColor: 'transparent',
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    marginTop: 4,
   },
 });
