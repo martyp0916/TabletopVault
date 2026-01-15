@@ -4,16 +4,16 @@
 
 **App Name**: TabletopVault
 **Purpose**: Mobile app for tabletop gaming collectors to track inventory, share collections, and monitor collection value
-**Target Games**: Warhammer 40K, Age of Sigmar, Star Wars Legion
+**Target Games**: Warhammer 40K, Warhammer Age of Sigmar, Horus Heresy, Kill Team, Star Wars Legion, Star Wars Shatterpoint, Halo Flashpoint, Bolt Action, Marvel Crisis Protocol, Battle Tech
 **Tech Stack**: React Native + Expo + TypeScript + Supabase
 **Repository**: https://github.com/martyp0916/TabletopVault
 **Last Updated**: January 2025
 
 ---
 
-## Current Status: MVP Complete + Photo Upload
+## Current Status: MVP Complete + UI Enhancements
 
-The app has a fully functional backend and is ready for testing. All core features are implemented and connected to Supabase, including photo upload functionality.
+The app has a fully functional backend and polished UI. All core features are implemented and connected to Supabase, including photo upload, pull-to-refresh, and collection management.
 
 ### What's Working
 
@@ -22,15 +22,34 @@ The app has a fully functional backend and is ready for testing. All core featur
 | User signup | Working | Email/password auth (email confirmation disabled for dev) |
 | User login | Working | Persists session with AsyncStorage |
 | User logout | Working | Clears session and redirects to login |
-| Create collection | Working | Modal form, saves to database |
+| Create collection | Working | Dropdown menu with 10 supported games |
 | View collections | Working | Grid layout with item counts |
+| **Delete collection** | Working | With confirmation dialog |
 | Add item | Working | Full form with game/status/price fields |
 | **Photo upload** | Working | Camera + gallery picker, uploads to Supabase Storage |
 | View items | Working | List view in collection detail |
 | View item detail | Working | Shows all item properties + photo |
 | Delete item | Working | With confirmation dialog, cleans up photos |
-| Dashboard stats | Working | Real-time from database |
+| **Dashboard** | Working | Minimal design with hero shame pile stat |
+| **Pull-to-refresh** | Working | All screens support pull-to-refresh |
 | Profile page | Working | Shows user info and stats |
+
+---
+
+## Supported Games
+
+Collections can be created for these games (dropdown menu):
+
+1. Battle Tech
+2. Bolt Action
+3. Halo Flashpoint
+4. Horus Heresy
+5. Marvel Crisis Protocol
+6. Star Wars Legion
+7. Star Wars Shatterpoint
+8. Warhammer 40K
+9. Warhammer 40K: Kill Team
+10. Warhammer Age of Sigmar
 
 ---
 
@@ -54,11 +73,15 @@ The app has a fully functional backend and is ready for testing. All core featur
 - [x] Photo upload functionality (camera + gallery)
 - [x] Supabase Storage bucket for private image storage
 - [x] Signed URLs for secure image viewing
+- [x] Redesigned home dashboard (minimal style with hero stat)
+- [x] Pull-to-refresh on all screens
+- [x] Game dropdown menu for collection creation
+- [x] Delete collection functionality
 
 ### Future Enhancements
 
 - [ ] Edit item functionality
-- [ ] Edit/delete collection functionality
+- [ ] Edit collection functionality
 - [ ] Password reset flow
 - [ ] Profile editing (username, avatar)
 - [ ] Search and filter items
@@ -80,12 +103,12 @@ TabletopVault/
 │   │   └── signup.tsx            # Signup form
 │   ├── (tabs)/                   # Main tab navigation
 │   │   ├── _layout.tsx           # Tab bar (Home, Collections, Add, Profile)
-│   │   ├── index.tsx             # Home dashboard
-│   │   ├── collections.tsx       # Collections grid
+│   │   ├── index.tsx             # Home dashboard (minimal design)
+│   │   ├── collections.tsx       # Collections grid + game dropdown
 │   │   ├── add.tsx               # Add item form + photo picker
 │   │   └── profile.tsx           # User profile & settings
 │   ├── collection/
-│   │   └── [id].tsx              # Collection detail (dynamic route)
+│   │   └── [id].tsx              # Collection detail + delete (dynamic route)
 │   ├── item/
 │   │   └── [id].tsx              # Item detail + photo display (dynamic route)
 │   └── _layout.tsx               # Root layout with AuthProvider
@@ -95,8 +118,8 @@ TabletopVault/
 ├── constants/
 │   └── Colors.ts                 # Light/dark theme colors
 ├── hooks/
-│   ├── useCollections.ts         # Collection CRUD operations
-│   ├── useItems.ts               # Item CRUD + stats hooks
+│   ├── useCollections.ts         # Collection CRUD + refresh operations
+│   ├── useItems.ts               # Item CRUD + stats + refresh hooks
 │   └── useProfile.ts             # User profile operations
 ├── lib/
 │   ├── auth.tsx                  # AuthContext + useAuth hook
@@ -198,17 +221,17 @@ CREATE TRIGGER on_auth_user_created
 ### Database Hooks
 
 **`hooks/useCollections.ts`**
-- `useCollections(userId)` - List all collections
-- `useCollection(id)` - Get single collection
+- `useCollections(userId)` - List all collections (with refresh)
+- `useCollection(id)` - Get single collection (with refresh)
 - `createCollection(name, description)` - Create new
 - `updateCollection(id, updates)` - Update existing
 - `deleteCollection(id)` - Delete
 
 **`hooks/useItems.ts`**
-- `useItems(userId, collectionId?)` - List items
-- `useItem(id)` - Get single item
-- `useItemStats(userId)` - Get total/battleReady/shamePile counts
-- `useRecentItems(userId, limit)` - Get recent items
+- `useItems(userId, collectionId?)` - List items (with refresh)
+- `useItem(id)` - Get single item (with refresh)
+- `useItemStats(userId)` - Get total/battleReady/shamePile counts (with refresh)
+- `useRecentItems(userId, limit)` - Get recent items (with refresh)
 - `createItem(item)` - Create new (returns { data, error })
 - `updateItem(id, updates)` - Update existing
 - `deleteItem(id)` - Delete
@@ -216,6 +239,24 @@ CREATE TRIGGER on_auth_user_created
 **`hooks/useProfile.ts`**
 - `useProfile(userId)` - Get user profile
 - `updateProfile(updates)` - Update profile
+
+### Home Dashboard (app/(tabs)/index.tsx)
+
+Minimal design featuring:
+- Hero shame pile count (large centered number)
+- Progress bar showing % painted
+- Stat cards for total and battle-ready counts
+- "Paint Next" suggestion card
+- Action buttons (Add Item, Collections)
+- Recent items list with status dots
+- Pull-to-refresh support
+
+### Collection Creation (app/(tabs)/collections.tsx)
+
+- Dropdown menu with 10 supported games
+- Optional description field
+- Pull-to-refresh support
+- Grid layout with colored banners
 
 ### Photo Upload (app/(tabs)/add.tsx)
 
@@ -230,6 +271,14 @@ CREATE TRIGGER on_auth_user_created
 - Creates signed URL for private bucket access
 - Displays image or placeholder if none exists
 - Cleans up storage on item deletion
+- Pull-to-refresh support
+
+### Collection Detail (app/collection/[id].tsx)
+
+- Shows collection info and item list
+- Stats for battle ready, in progress, shame pile
+- Delete collection button with confirmation
+- Pull-to-refresh support
 
 ### Type Definitions
 
@@ -313,7 +362,9 @@ node -e "const { Client } = require('pg'); ..."
 2. Scan QR code with Expo Go on iPhone
 3. Sign up with email/password (no confirmation needed)
 4. Log in immediately
-5. Create a collection
+5. Create a collection (select from game dropdown)
 6. Add items to collection (try adding a photo!)
-7. View item details to see the photo
-8. View dashboard stats update in real-time
+7. Pull down on any screen to refresh data
+8. View item details to see the photo
+9. Delete items or collections as needed
+10. View dashboard stats update in real-time
