@@ -3,25 +3,28 @@ import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useAuth } from '@/lib/auth';
+import { useTheme } from '@/lib/theme';
 import { useItemStats, useRecentItems } from '@/hooks/useItems';
+import { useCollections } from '@/hooks/useCollections';
 import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus } from '@/types/database';
 
 export default function HomeScreen() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const { isDarkMode, toggleTheme } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user } = useAuth();
   const { stats, loading: statsLoading, refresh: refreshStats } = useItemStats(user?.id);
   const { items: recentItems, loading: itemsLoading, refresh: refreshItems } = useRecentItems(user?.id, 10);
+  const { collections, loading: collectionsLoading, refresh: refreshCollections } = useCollections(user?.id);
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refreshStats(), refreshItems()]);
+    await Promise.all([refreshStats(), refreshItems(), refreshCollections()]);
     setRefreshing(false);
-  }, [refreshStats, refreshItems]);
+  }, [refreshStats, refreshItems, refreshCollections]);
 
   // Find items that need painting (shame pile + in progress)
   const unpaintedItems = recentItems.filter(i => i.status === 'nib' || i.status === 'assembled' || i.status === 'primed');
@@ -44,29 +47,47 @@ export default function HomeScreen() {
         />
       }
     >
-      {/* Minimal Header */}
+      {/* Welcome Header */}
       <View style={styles.header}>
-        <Pressable onPress={() => setIsDarkMode(!isDarkMode)}>
+        <View style={styles.headerLeft}>
+          <Text style={[styles.appName, { color: colors.text }]}>TabletopVault</Text>
+          <Text style={[styles.greeting, { color: colors.textSecondary }]}>
+            Welcome back{user?.email ? `, ${user.email.split('@')[0]}` : ''}
+          </Text>
+        </View>
+        <Pressable
+          style={[styles.themeToggle, { backgroundColor: colors.card }]}
+          onPress={toggleTheme}
+        >
           <FontAwesome
             name={isDarkMode ? 'sun-o' : 'moon-o'}
-            size={20}
-            color={colors.textSecondary}
+            size={18}
+            color={colors.text}
           />
         </Pressable>
       </View>
 
       {/* Hero Shame Pile */}
-      <View style={styles.heroSection}>
+      <View style={[styles.heroSection, { backgroundColor: colors.card }]}>
+        <View style={styles.heroIconContainer}>
+          <FontAwesome name="paint-brush" size={24} color="#ef4444" />
+        </View>
         <Text style={[styles.heroNumber, { color: colors.text }]}>
           {statsLoading ? '—' : stats.shamePile}
         </Text>
         <Text style={[styles.heroLabel, { color: colors.textSecondary }]}>
-          unpainted
+          models to paint
         </Text>
       </View>
 
       {/* Progress Bar */}
-      <View style={styles.progressSection}>
+      <View style={[styles.progressSection, { backgroundColor: colors.card }]}>
+        <View style={styles.progressHeader}>
+          <Text style={[styles.progressTitle, { color: colors.text }]}>Paint Progress</Text>
+          <Text style={[styles.progressPercent, { color: '#10b981' }]}>
+            {paintProgress}%
+          </Text>
+        </View>
         <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
           <View
             style={[
@@ -79,26 +100,32 @@ export default function HomeScreen() {
           />
         </View>
         <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-          {paintProgress}% painted
+          {stats.battleReady} of {stats.total} models painted
         </Text>
       </View>
 
       {/* Quick Stats Row */}
       <View style={styles.statsRow}>
-        <View style={[styles.statCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statCardNumber, { color: colors.text }]}>
+        <View style={[styles.statCard, { backgroundColor: '#3b82f6' }]}>
+          <View style={styles.statCardIcon}>
+            <FontAwesome name="cubes" size={20} color="rgba(255,255,255,0.9)" />
+          </View>
+          <Text style={[styles.statCardNumber, { color: '#fff' }]}>
             {statsLoading ? '-' : stats.total}
           </Text>
-          <Text style={[styles.statCardLabel, { color: colors.textSecondary }]}>
-            total
+          <Text style={[styles.statCardLabel, { color: 'rgba(255,255,255,0.8)' }]}>
+            total models
           </Text>
         </View>
-        <View style={[styles.statCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statCardNumber, { color: '#10b981' }]}>
-            {statsLoading ? '-' : stats.battleReady}
+        <View style={[styles.statCard, { backgroundColor: '#8b5cf6' }]}>
+          <View style={styles.statCardIcon}>
+            <FontAwesome name="folder" size={20} color="rgba(255,255,255,0.9)" />
+          </View>
+          <Text style={[styles.statCardNumber, { color: '#fff' }]}>
+            {collectionsLoading ? '-' : collections.length}
           </Text>
-          <Text style={[styles.statCardLabel, { color: colors.textSecondary }]}>
-            ready
+          <Text style={[styles.statCardLabel, { color: 'rgba(255,255,255,0.8)' }]}>
+            collections
           </Text>
         </View>
       </View>
@@ -187,9 +214,6 @@ export default function HomeScreen() {
           </Text>
         </View>
       )}
-
-      {/* Bottom Spacing */}
-      <View style={{ height: 120 }} />
     </ScrollView>
   );
 }
@@ -211,43 +235,89 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: 16,
+    paddingBottom: 8,
     backgroundColor: 'transparent',
+  },
+  headerLeft: {
+    backgroundColor: 'transparent',
+  },
+  appName: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  greeting: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  themeToggle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   heroSection: {
     alignItems: 'center',
-    paddingTop: 40,
-    paddingBottom: 20,
-    backgroundColor: 'transparent',
+    marginHorizontal: 24,
+    marginTop: 20,
+    paddingVertical: 24,
+    borderRadius: 16,
+  },
+  heroIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
   },
   heroNumber: {
-    fontSize: 96,
-    fontWeight: '200',
-    letterSpacing: -4,
+    fontSize: 72,
+    fontWeight: '700',
+    letterSpacing: -2,
   },
   heroLabel: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '500',
-    letterSpacing: 2,
+    letterSpacing: 1,
     textTransform: 'uppercase',
-    marginTop: -8,
+    marginTop: 4,
   },
   progressSection: {
-    paddingHorizontal: 48,
+    marginHorizontal: 24,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 12,
     backgroundColor: 'transparent',
+  },
+  progressTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  progressPercent: {
+    fontSize: 18,
+    fontWeight: '700',
   },
   progressBar: {
     width: '100%',
-    height: 4,
-    borderRadius: 2,
+    height: 8,
+    borderRadius: 4,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 2,
+    borderRadius: 4,
   },
   progressText: {
     fontSize: 13,
@@ -257,24 +327,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 24,
     gap: 12,
-    marginTop: 32,
+    marginTop: 16,
     backgroundColor: 'transparent',
   },
   statCard: {
     flex: 1,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
   },
+  statCardIcon: {
+    marginBottom: 8,
+    backgroundColor: 'transparent',
+  },
   statCardNumber: {
-    fontSize: 28,
-    fontWeight: '600',
+    fontSize: 32,
+    fontWeight: '700',
   },
   statCardLabel: {
     fontSize: 12,
-    marginTop: 2,
+    marginTop: 4,
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   section: {
     paddingHorizontal: 24,

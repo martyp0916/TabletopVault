@@ -4,12 +4,13 @@ import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
+import { useTheme } from '@/lib/theme';
 import { useProfile } from '@/hooks/useProfile';
 import { useCollections } from '@/hooks/useCollections';
 import { useItemStats } from '@/hooks/useItems';
 
 export default function ProfileScreen() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const { isDarkMode, toggleTheme } = useTheme();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
   const colors = isDarkMode ? Colors.dark : Colors.light;
@@ -96,7 +97,7 @@ export default function ProfileScreen() {
           </View>
           <Switch
             value={isDarkMode}
-            onValueChange={setIsDarkMode}
+            onValueChange={toggleTheme}
             trackColor={{ false: colors.border, true: '#374151' }}
             thumbColor="#fff"
           />

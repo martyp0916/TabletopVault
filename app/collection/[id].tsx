@@ -5,13 +5,14 @@ import { useLocalSearchParams, router } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useState, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
+import { useTheme } from '@/lib/theme';
 import { useCollection, useCollections } from '@/hooks/useCollections';
 import { useItems } from '@/hooks/useItems';
 import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus } from '@/types/database';
 
 export default function CollectionDetailScreen() {
   const { id } = useLocalSearchParams();
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const { isDarkMode, toggleTheme } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user } = useAuth();
@@ -80,7 +81,7 @@ export default function CollectionDetailScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <FontAwesome name="arrow-left" size={20} color={colors.text} />
         </Pressable>
@@ -89,12 +90,13 @@ export default function CollectionDetailScreen() {
             {collection.name}
           </Text>
         </View>
-        <Pressable onPress={() => setIsDarkMode(!isDarkMode)}>
+        <Pressable onPress={toggleTheme}>
           <FontAwesome name={isDarkMode ? 'sun-o' : 'moon-o'} size={20} color={colors.text} />
         </Pressable>
       </View>
 
       <ScrollView
+        style={{ backgroundColor: colors.background }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -183,8 +185,15 @@ export default function CollectionDetailScreen() {
           )}
         </View>
 
-        {/* Delete Collection Button */}
-        <View style={styles.deleteSection}>
+        {/* Action Buttons */}
+        <View style={styles.actionsSection}>
+          <Pressable
+            style={[styles.editButton, { backgroundColor: '#3b82f6' }]}
+            onPress={() => router.push(`/collection/edit/${id}`)}
+          >
+            <FontAwesome name="pencil" size={16} color="#fff" />
+            <Text style={styles.editButtonText}>Edit</Text>
+          </Pressable>
           <Pressable
             style={[styles.deleteButton, { borderColor: '#ef4444' }]}
             onPress={handleDeleteCollection}
@@ -195,13 +204,12 @@ export default function CollectionDetailScreen() {
             ) : (
               <>
                 <FontAwesome name="trash" size={16} color="#ef4444" />
-                <Text style={styles.deleteButtonText}>Delete Collection</Text>
+                <Text style={styles.deleteButtonText}>Delete</Text>
               </>
             )}
           </Pressable>
         </View>
 
-        <View style={{ height: 100 }} />
       </ScrollView>
     </View>
   );
@@ -347,12 +355,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  deleteSection: {
+  actionsSection: {
+    flexDirection: 'row',
     paddingHorizontal: 20,
     marginTop: 32,
+    gap: 12,
     backgroundColor: 'transparent',
   },
+  editButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  editButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
+  },
   deleteButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

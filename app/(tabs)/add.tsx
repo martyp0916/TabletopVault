@@ -5,18 +5,12 @@ import Colors from '@/constants/Colors';
 import { useState, useEffect } from 'react';
 import { router } from 'expo-router';
 import { useAuth } from '@/lib/auth';
+import { useTheme } from '@/lib/theme';
 import { useCollections } from '@/hooks/useCollections';
 import { useItems } from '@/hooks/useItems';
 import { GameSystem, ItemStatus, GAME_SYSTEM_LABELS, STATUS_LABELS } from '@/types/database';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
-
-const GAME_SYSTEMS: { value: GameSystem; label: string }[] = [
-  { value: 'wh40k', label: 'Warhammer 40K' },
-  { value: 'aos', label: 'Age of Sigmar' },
-  { value: 'legion', label: 'Star Wars Legion' },
-  { value: 'other', label: 'Other' },
-];
 
 const STATUSES: { value: ItemStatus; label: string }[] = [
   { value: 'nib', label: 'New in Box' },
@@ -26,8 +20,25 @@ const STATUSES: { value: ItemStatus; label: string }[] = [
   { value: 'based', label: 'Based' },
 ];
 
+function getGameSystemFromName(name: string): GameSystem {
+  const nameMap: Record<string, GameSystem> = {
+    'Warhammer 40K': 'wh40k',
+    'Warhammer 40K: Kill Team': 'wh40k',
+    'Warhammer Age of Sigmar': 'aos',
+    'Warhammer Horus Heresy': 'wh40k',
+    'Horus Heresy': 'wh40k',
+    'Star Wars Legion': 'legion',
+    'Star Wars Shatterpoint': 'legion',
+    'Battle Tech': 'other',
+    'Bolt Action': 'other',
+    'Halo Flashpoint': 'other',
+    'Marvel Crisis Protocol': 'other',
+  };
+  return nameMap[name] || 'other';
+}
+
 export default function AddScreen() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const { isDarkMode, toggleTheme } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user } = useAuth();
@@ -36,15 +47,14 @@ export default function AddScreen() {
 
   // Form state
   const [name, setName] = useState('');
-  const [gameSystem, setGameSystem] = useState<GameSystem | ''>('');
   const [faction, setFaction] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [status, setStatus] = useState<ItemStatus | ''>('');
-  const [price, setPrice] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedCollection, setSelectedCollection] = useState('');
   const [saving, setSaving] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [showCollectionDropdown, setShowCollectionDropdown] = useState(false);
 
   const pickImage = async (useCamera: boolean) => {
     // Request permissions
@@ -131,6 +141,7 @@ export default function AddScreen() {
     }
   };
 
+
   // Auto-select first collection
   useEffect(() => {
     if (collections.length > 0 && !selectedCollection) {
@@ -140,11 +151,9 @@ export default function AddScreen() {
 
   const resetForm = () => {
     setName('');
-    setGameSystem('');
     setFaction('');
     setQuantity('1');
     setStatus('');
-    setPrice('');
     setNotes('');
     setSelectedImage(null);
   };
@@ -160,21 +169,19 @@ export default function AddScreen() {
       return;
     }
 
-    if (!gameSystem) {
-      Alert.alert('Error', 'Please select a game system');
-      return;
-    }
-
     setSaving(true);
+
+    // Derive game system from collection name
+    const selectedCol = collections.find(c => c.id === selectedCollection);
+    const derivedGameSystem = getGameSystemFromName(selectedCol?.name || '');
 
     const { data: newItem, error } = await createItem({
       collection_id: selectedCollection,
       name: name.trim(),
-      game_system: gameSystem,
+      game_system: derivedGameSystem,
       faction: faction.trim() || undefined,
       quantity: parseInt(quantity) || 1,
       status: status || 'nib',
-      purchase_price: price ? parseFloat(price.replace('$', '')) : undefined,
       notes: notes.trim() || undefined,
     });
 
@@ -221,7 +228,7 @@ export default function AddScreen() {
           </View>
           <Pressable
             style={[styles.themeToggle, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => setIsDarkMode(!isDarkMode)}
+            onPress={toggleTheme}
           >
             <FontAwesome
               name={isDarkMode ? 'sun-o' : 'moon-o'}
@@ -273,30 +280,62 @@ export default function AddScreen() {
               </Text>
             </Pressable>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.chipContainer}>
-                {collections.map((col) => (
-                  <Pressable
-                    key={col.id}
-                    style={[
-                      styles.chip,
-                      {
-                        backgroundColor: selectedCollection === col.id ? '#374151' : colors.card,
-                        borderColor: selectedCollection === col.id ? '#374151' : colors.border,
-                      }
-                    ]}
-                    onPress={() => setSelectedCollection(col.id)}
-                  >
-                    <Text style={[
-                      styles.chipText,
-                      { color: selectedCollection === col.id ? '#fff' : colors.text }
-                    ]}>
-                      {col.name}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
+            <>
+              <Pressable
+                style={[styles.dropdown, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => setShowCollectionDropdown(!showCollectionDropdown)}
+              >
+                <Text style={[
+                  styles.dropdownText,
+                  { color: selectedCollection ? colors.text : colors.textSecondary }
+                ]}>
+                  {selectedCollection
+                    ? (() => {
+                        const col = collections.find(c => c.id === selectedCollection);
+                        return col?.description
+                          ? `${col.description} (${col.name})`
+                          : col?.name;
+                      })()
+                    : 'Select a collection...'}
+                </Text>
+                <FontAwesome
+                  name={showCollectionDropdown ? 'chevron-up' : 'chevron-down'}
+                  size={14}
+                  color={colors.textSecondary}
+                />
+              </Pressable>
+
+              {showCollectionDropdown && (
+                <View style={[styles.dropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <ScrollView style={styles.dropdownScroll} nestedScrollEnabled>
+                    {collections.map((col) => (
+                      <Pressable
+                        key={col.id}
+                        style={[
+                          styles.dropdownItem,
+                          selectedCollection === col.id && styles.dropdownItemSelected,
+                          { borderBottomColor: colors.border }
+                        ]}
+                        onPress={() => {
+                          setSelectedCollection(col.id);
+                          setShowCollectionDropdown(false);
+                        }}
+                      >
+                        <Text style={[
+                          styles.dropdownItemText,
+                          { color: selectedCollection === col.id ? '#3b82f6' : colors.text }
+                        ]}>
+                          {col.description ? `${col.description} (${col.name})` : col.name}
+                        </Text>
+                        {selectedCollection === col.id && (
+                          <FontAwesome name="check" size={14} color="#3b82f6" />
+                        )}
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
+            </>
           )}
         </View>
 
@@ -312,33 +351,6 @@ export default function AddScreen() {
           />
         </View>
 
-        {/* Game System */}
-        <View style={styles.fieldGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Game System *</Text>
-          <View style={styles.chipContainer}>
-            {GAME_SYSTEMS.map((game) => (
-              <Pressable
-                key={game.value}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor: gameSystem === game.value ? '#374151' : colors.card,
-                    borderColor: gameSystem === game.value ? '#374151' : colors.border,
-                  }
-                ]}
-                onPress={() => setGameSystem(game.value)}
-              >
-                <Text style={[
-                  styles.chipText,
-                  { color: gameSystem === game.value ? '#fff' : colors.text }
-                ]}>
-                  {game.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-
         {/* Faction */}
         <View style={styles.fieldGroup}>
           <Text style={[styles.label, { color: colors.text }]}>Faction</Text>
@@ -351,30 +363,17 @@ export default function AddScreen() {
           />
         </View>
 
-        {/* Quantity & Price Row */}
-        <View style={styles.row}>
-          <View style={[styles.fieldGroup, { flex: 1 }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Quantity</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              placeholder="1"
-              placeholderTextColor={colors.textSecondary}
-              value={quantity}
-              onChangeText={setQuantity}
-              keyboardType="number-pad"
-            />
-          </View>
-          <View style={[styles.fieldGroup, { flex: 1 }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Price Paid</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              placeholder="$0.00"
-              placeholderTextColor={colors.textSecondary}
-              value={price}
-              onChangeText={setPrice}
-              keyboardType="decimal-pad"
-            />
-          </View>
+        {/* Quantity */}
+        <View style={styles.fieldGroup}>
+          <Text style={[styles.label, { color: colors.text }]}>Quantity</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+            placeholder="1"
+            placeholderTextColor={colors.textSecondary}
+            value={quantity}
+            onChangeText={setQuantity}
+            keyboardType="number-pad"
+          />
         </View>
 
         {/* Status */}
@@ -435,9 +434,6 @@ export default function AddScreen() {
           )}
         </Pressable>
       </View>
-
-      {/* Bottom Spacing */}
-      <View style={{ height: 120 }} />
     </ScrollView>
   );
 }
@@ -597,5 +593,40 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  dropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 52,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+  },
+  dropdownText: {
+    fontSize: 16,
+  },
+  dropdownList: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  dropdownScroll: {
+    maxHeight: 200,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+  },
+  dropdownItemSelected: {
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  dropdownItemText: {
+    fontSize: 16,
   },
 });

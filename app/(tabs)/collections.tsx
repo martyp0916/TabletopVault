@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth';
+import { useTheme } from '@/lib/theme';
 import { useCollections } from '@/hooks/useCollections';
 import { supabase } from '@/lib/supabase';
 const GAME_LIST = [
@@ -30,7 +31,7 @@ const COLLECTION_COLORS = [
 ];
 
 export default function CollectionsScreen() {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const { isDarkMode, toggleTheme } = useTheme();
   const [showModal, setShowModal] = useState(false);
   const [selectedGame, setSelectedGame] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -108,7 +109,7 @@ export default function CollectionsScreen() {
           </View>
           <Pressable
             style={[styles.themeToggle, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => setIsDarkMode(!isDarkMode)}
+            onPress={toggleTheme}
           >
             <FontAwesome
               name={isDarkMode ? 'sun-o' : 'moon-o'}
@@ -176,9 +177,6 @@ export default function CollectionsScreen() {
           ))}
         </View>
       )}
-
-      {/* Bottom Spacing */}
-      <View style={{ height: 120 }} />
 
       {/* Create Collection Modal */}
       <Modal

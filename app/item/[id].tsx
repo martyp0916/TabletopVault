@@ -5,12 +5,13 @@ import { useLocalSearchParams, router } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useState, useEffect, useCallback } from 'react';
 import { useItem } from '@/hooks/useItems';
+import { useTheme } from '@/lib/theme';
 import { supabase } from '@/lib/supabase';
 import { GAME_COLORS, STATUS_LABELS, GAME_SYSTEM_LABELS, GameSystem, ItemStatus } from '@/types/database';
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams();
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const { isDarkMode, toggleTheme } = useTheme();
   const [deleting, setDeleting] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -125,7 +126,7 @@ export default function ItemDetailScreen() {
           <FontAwesome name="arrow-left" size={20} color={colors.text} />
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Details</Text>
-        <Pressable onPress={() => setIsDarkMode(!isDarkMode)}>
+        <Pressable onPress={toggleTheme}>
           <FontAwesome name={isDarkMode ? 'sun-o' : 'moon-o'} size={20} color={colors.text} />
         </Pressable>
       </View>
@@ -170,26 +171,10 @@ export default function ItemDetailScreen() {
           </Text>
         </View>
 
-        {/* Quick Stats */}
-        <View style={[styles.statsCard, { backgroundColor: colors.card }]}>
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: colors.text }]}>{item.quantity}</Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Quantity</Text>
-          </View>
-          <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: colors.text }]}>
-              ${item.purchase_price?.toFixed(2) || '0.00'}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Paid</Text>
-          </View>
-          <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: '#10b981' }]}>
-              ${item.current_value?.toFixed(2) || item.purchase_price?.toFixed(2) || '0.00'}
-            </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Value</Text>
-          </View>
+        {/* Quantity */}
+        <View style={[styles.quantityCard, { backgroundColor: colors.card }]}>
+          <Text style={[styles.quantityValue, { color: colors.text }]}>{item.quantity}</Text>
+          <Text style={[styles.quantityLabel, { color: colors.textSecondary }]}>Quantity</Text>
         </View>
 
         {/* Details List */}
@@ -239,6 +224,13 @@ export default function ItemDetailScreen() {
         {/* Actions */}
         <View style={styles.actionsSection}>
           <Pressable
+            style={[styles.editButton, { backgroundColor: '#3b82f6' }]}
+            onPress={() => router.push(`/item/edit/${id}`)}
+          >
+            <FontAwesome name="pencil" size={16} color="#fff" />
+            <Text style={styles.editButtonText}>Edit</Text>
+          </Pressable>
+          <Pressable
             style={[styles.deleteButton, { borderColor: '#ef4444' }]}
             onPress={handleDelete}
             disabled={deleting}
@@ -253,8 +245,6 @@ export default function ItemDetailScreen() {
             )}
           </Pressable>
         </View>
-
-        <View style={{ height: 100 }} />
       </ScrollView>
     </View>
   );
@@ -343,29 +333,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginTop: 8,
   },
-  statsCard: {
-    flexDirection: 'row',
+  quantityCard: {
     marginHorizontal: 20,
     marginTop: 24,
-    padding: 20,
-    borderRadius: 16,
-  },
-  statItem: {
-    flex: 1,
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    backgroundColor: 'transparent',
   },
-  statValue: {
-    fontSize: 24,
+  quantityValue: {
+    fontSize: 28,
     fontWeight: '700',
   },
-  statLabel: {
+  quantityLabel: {
     fontSize: 12,
     marginTop: 4,
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
   },
   detailsSection: {
     paddingHorizontal: 20,
@@ -407,6 +388,20 @@ const styles = StyleSheet.create({
     marginTop: 32,
     gap: 12,
     backgroundColor: 'transparent',
+  },
+  editButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  editButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
   },
   deleteButton: {
     flex: 1,
