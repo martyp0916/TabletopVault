@@ -1,12 +1,14 @@
-import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
 import { useCollection, useCollections } from '@/hooks/useCollections';
+import { supabase } from '@/lib/supabase';
+import * as ImagePicker from 'expo-image-picker';
 
 const GAME_LIST = [
   'Battle Tech',
@@ -35,14 +37,118 @@ export default function EditCollectionScreen() {
   const [description, setDescription] = useState('');
   const [showGameDropdown, setShowGameDropdown] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
+  const [imageChanged, setImageChanged] = useState(false);
+
+  // Fetch current cover image signed URL
+  const fetchCurrentImage = useCallback(async () => {
+    if (collection?.cover_image_url) {
+      const { data: signedUrlData } = await supabase.storage
+        .from('collection-images')
+        .createSignedUrl(collection.cover_image_url, 3600);
+      if (signedUrlData?.signedUrl) {
+        setCurrentImageUrl(signedUrlData.signedUrl);
+      }
+    }
+  }, [collection]);
 
   // Populate form with existing collection data
   useEffect(() => {
     if (collection) {
       setName(collection.name || '');
       setDescription(collection.description || '');
+      fetchCurrentImage();
     }
-  }, [collection]);
+  }, [collection, fetchCurrentImage]);
+
+  const pickImage = async (useCamera: boolean) => {
+    if (useCamera) {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permission is required to take photos.');
+        return;
+      }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Photo library permission is required to select photos.');
+        return;
+      }
+    }
+
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+
+    if (!result.canceled && result.assets[0]) {
+      setSelectedImage(result.assets[0].uri);
+      setImageChanged(true);
+    }
+  };
+
+  const showImageOptions = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Take Photo', 'Choose from Library'],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) pickImage(true);
+          if (buttonIndex === 2) pickImage(false);
+        }
+      );
+    } else {
+      Alert.alert('Change Cover Image', 'Choose an option', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Take Photo', onPress: () => pickImage(true) },
+        { text: 'Choose from Library', onPress: () => pickImage(false) },
+      ]);
+    }
+  };
+
+  const uploadCoverImage = async (): Promise<string | null> => {
+    if (!selectedImage || !user) return null;
+
+    try {
+      // Get file extension from URI (handle query params)
+      const uriWithoutParams = selectedImage.split('?')[0];
+      const fileExt = uriWithoutParams.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${user.id}/${id}/${Date.now()}.${fileExt}`;
+
+      // Fetch the image and convert to arrayBuffer
+      const response = await fetch(selectedImage);
+      const arrayBuffer = await response.arrayBuffer();
+
+      const { error: uploadError } = await supabase.storage
+        .from('collection-images')
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        return null;
+      }
+
+      return fileName;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      return null;
+    }
+  };
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -52,10 +158,26 @@ export default function EditCollectionScreen() {
 
     setSaving(true);
 
-    const { error } = await updateCollection(id as string, {
+    const updates: any = {
       name: name.trim(),
       description: description.trim() || null,
-    });
+    };
+
+    // Upload new image if changed
+    if (imageChanged && selectedImage) {
+      const imagePath = await uploadCoverImage();
+      if (imagePath) {
+        // Delete old image if exists
+        if (collection?.cover_image_url) {
+          await supabase.storage
+            .from('collection-images')
+            .remove([collection.cover_image_url]);
+        }
+        updates.cover_image_url = imagePath;
+      }
+    }
+
+    const { error } = await updateCollection(id as string, updates);
 
     setSaving(false);
 
@@ -67,6 +189,31 @@ export default function EditCollectionScreen() {
     Alert.alert('Success', 'Collection updated!', [
       { text: 'OK', onPress: () => router.back() },
     ]);
+  };
+
+  const handleRemoveImage = () => {
+    Alert.alert(
+      'Remove Cover Image',
+      'Are you sure you want to remove the cover image?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            if (collection?.cover_image_url) {
+              await supabase.storage
+                .from('collection-images')
+                .remove([collection.cover_image_url]);
+              await updateCollection(id as string, { cover_image_url: null });
+            }
+            setSelectedImage(null);
+            setCurrentImageUrl(null);
+            setImageChanged(false);
+          },
+        },
+      ]
+    );
   };
 
   if (collectionLoading) {
@@ -82,11 +229,13 @@ export default function EditCollectionScreen() {
       <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.text }}>Collection not found</Text>
         <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
-          <Text style={{ color: '#3b82f6' }}>Go back</Text>
+          <Text style={{ color: '#991b1b' }}>Go back</Text>
         </Pressable>
       </View>
     );
   }
+
+  const displayImage = selectedImage || currentImageUrl;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -108,6 +257,34 @@ export default function EditCollectionScreen() {
       >
         {/* Form Fields */}
         <View style={styles.form}>
+          {/* Cover Image */}
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Cover Image</Text>
+            <Pressable
+              style={[styles.imagePicker, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={showImageOptions}
+            >
+              {displayImage ? (
+                <Image source={{ uri: displayImage }} style={styles.imagePreview} resizeMode="contain" />
+              ) : (
+                <>
+                  <FontAwesome name="image" size={24} color={colors.textSecondary} />
+                  <Text style={[styles.imagePickerText, { color: colors.textSecondary }]}>
+                    Add faction logo or photo
+                  </Text>
+                </>
+              )}
+            </Pressable>
+            {displayImage && (
+              <Pressable
+                style={styles.removeImageButton}
+                onPress={handleRemoveImage}
+              >
+                <Text style={styles.removeImageText}>Remove Image</Text>
+              </Pressable>
+            )}
+          </View>
+
           {/* Game Name */}
           <View style={styles.fieldGroup}>
             <Text style={[styles.label, { color: colors.text }]}>Game *</Text>
@@ -146,12 +323,12 @@ export default function EditCollectionScreen() {
                     >
                       <Text style={[
                         styles.dropdownItemText,
-                        { color: name === game ? '#3b82f6' : colors.text }
+                        { color: name === game ? '#991b1b' : colors.text }
                       ]}>
                         {game}
                       </Text>
                       {name === game && (
-                        <FontAwesome name="check" size={14} color="#3b82f6" />
+                        <FontAwesome name="check" size={14} color="#991b1b" />
                       )}
                     </Pressable>
                   ))}
@@ -277,11 +454,39 @@ const styles = StyleSheet.create({
     height: 100,
     textAlignVertical: 'top',
   },
+  imagePicker: {
+    height: 150,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    overflow: 'hidden',
+  },
+  imagePickerText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+  },
+  removeImageButton: {
+    alignSelf: 'center',
+    marginTop: 8,
+    padding: 8,
+  },
+  removeImageText: {
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '500',
+  },
   submitButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#991b1b',
     padding: 16,
     borderRadius: 12,
     gap: 8,

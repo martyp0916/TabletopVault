@@ -1,6 +1,157 @@
+/**
+ * Items Hook
+ *
+ * SECURITY: Implements comprehensive input validation and sanitization.
+ * - Schema-based validation for all item fields
+ * - UUID validation for IDs
+ * - Numeric bounds checking (quantity, price)
+ * - Rate limiting for mutations
+ * - Rejects unexpected fields to prevent mass assignment
+ */
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Item, ItemStatus, GameSystem } from '@/types/database';
+import {
+  validateUUID,
+  validateItemName,
+  validateItemFaction,
+  validateItemNotes,
+  validateItemQuantity,
+  validatePrice,
+  validateDate,
+  validateGameSystem,
+  validateItemStatus,
+  sanitizeString,
+  sanitizeNumber,
+  LIMITS,
+} from '@/lib/validation';
+import { rateLimiter, getRateLimitKey } from '@/lib/rateLimiter';
+
+// Define allowed fields for item creation/update (prevent mass assignment)
+const ALLOWED_CREATE_FIELDS = [
+  'collection_id', 'name', 'game_system', 'faction', 'quantity', 'status',
+  'nib_count', 'assembled_count', 'primed_count', 'painted_count', 'based_count',
+  'purchase_price', 'current_value', 'purchase_date', 'notes'
+];
+
+const ALLOWED_UPDATE_FIELDS = [
+  'name', 'game_system', 'faction', 'quantity', 'status',
+  'nib_count', 'assembled_count', 'primed_count', 'painted_count', 'based_count',
+  'purchase_price', 'current_value', 'purchase_date', 'notes'
+];
+
+/**
+ * Validate and sanitize item data
+ * SECURITY: Ensures all fields meet validation requirements
+ */
+function validateItemData(
+  data: Record<string, any>,
+  allowedFields: string[],
+  requireName: boolean = false
+): { isValid: boolean; error?: string; sanitized: Record<string, any> } {
+  const sanitized: Record<string, any> = {};
+
+  // Check for unexpected fields
+  for (const key of Object.keys(data)) {
+    if (!allowedFields.includes(key)) {
+      console.warn(`Rejected unexpected field in item data: ${key}`);
+    }
+  }
+
+  // Validate collection_id if present
+  if ('collection_id' in data) {
+    const validation = validateUUID(data.collection_id);
+    if (!validation.isValid) {
+      return { isValid: false, error: 'Invalid collection ID', sanitized: {} };
+    }
+    sanitized.collection_id = validation.sanitizedValue;
+  }
+
+  // Validate name
+  if ('name' in data || requireName) {
+    const validation = validateItemName(data.name);
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.errors[0], sanitized: {} };
+    }
+    sanitized.name = validation.sanitizedValue;
+  }
+
+  // Validate game_system
+  if ('game_system' in data) {
+    const validation = validateGameSystem(data.game_system);
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.errors[0], sanitized: {} };
+    }
+    sanitized.game_system = validation.sanitizedValue;
+  }
+
+  // Validate faction
+  if ('faction' in data) {
+    const validation = validateItemFaction(data.faction);
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.errors[0], sanitized: {} };
+    }
+    sanitized.faction = validation.sanitizedValue;
+  }
+
+  // Validate quantity fields
+  const quantityFields = ['quantity', 'nib_count', 'assembled_count', 'primed_count', 'painted_count', 'based_count'];
+  for (const field of quantityFields) {
+    if (field in data) {
+      const validation = validateItemQuantity(data[field], field);
+      if (!validation.isValid) {
+        return { isValid: false, error: validation.errors[0], sanitized: {} };
+      }
+      sanitized[field] = validation.sanitizedValue;
+    }
+  }
+
+  // Validate status
+  if ('status' in data) {
+    const validation = validateItemStatus(data.status);
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.errors[0], sanitized: {} };
+    }
+    sanitized.status = validation.sanitizedValue;
+  }
+
+  // Validate price fields
+  if ('purchase_price' in data) {
+    const validation = validatePrice(data.purchase_price, 'Purchase price');
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.errors[0], sanitized: {} };
+    }
+    sanitized.purchase_price = validation.sanitizedValue;
+  }
+
+  if ('current_value' in data) {
+    const validation = validatePrice(data.current_value, 'Current value');
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.errors[0], sanitized: {} };
+    }
+    sanitized.current_value = validation.sanitizedValue;
+  }
+
+  // Validate date
+  if ('purchase_date' in data) {
+    const validation = validateDate(data.purchase_date);
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.errors[0], sanitized: {} };
+    }
+    sanitized.purchase_date = validation.sanitizedValue;
+  }
+
+  // Validate notes
+  if ('notes' in data) {
+    const validation = validateItemNotes(data.notes);
+    if (!validation.isValid) {
+      return { isValid: false, error: validation.errors[0], sanitized: {} };
+    }
+    sanitized.notes = validation.sanitizedValue;
+  }
+
+  return { isValid: true, sanitized };
+}
 
 export function useItems(userId: string | undefined, collectionId?: string) {
   const [items, setItems] = useState<Item[]>([]);
@@ -12,6 +163,24 @@ export function useItems(userId: string | undefined, collectionId?: string) {
       setItems([]);
       setLoading(false);
       return;
+    }
+
+    // SECURITY: Validate userId format
+    const userIdValidation = validateUUID(userId);
+    if (!userIdValidation.isValid) {
+      setError('Invalid user ID');
+      setLoading(false);
+      return;
+    }
+
+    // SECURITY: Validate collectionId if provided
+    if (collectionId) {
+      const collectionIdValidation = validateUUID(collectionId);
+      if (!collectionIdValidation.isValid) {
+        setError('Invalid collection ID');
+        setLoading(false);
+        return;
+      }
     }
 
     try {
@@ -41,6 +210,10 @@ export function useItems(userId: string | undefined, collectionId?: string) {
     fetchItems();
   }, [fetchItems]);
 
+  /**
+   * Create a new item
+   * SECURITY: Validates all fields and applies rate limiting
+   */
   const createItem = async (item: {
     collection_id: string;
     name: string;
@@ -48,6 +221,11 @@ export function useItems(userId: string | undefined, collectionId?: string) {
     faction?: string;
     quantity?: number;
     status?: ItemStatus;
+    nib_count?: number;
+    assembled_count?: number;
+    primed_count?: number;
+    painted_count?: number;
+    based_count?: number;
     purchase_price?: number;
     current_value?: number;
     purchase_date?: string;
@@ -55,10 +233,23 @@ export function useItems(userId: string | undefined, collectionId?: string) {
   }) => {
     if (!userId) return { error: new Error('Not authenticated') };
 
+    // SECURITY: Validate and sanitize all input
+    const validation = validateItemData(item, ALLOWED_CREATE_FIELDS, true);
+    if (!validation.isValid) {
+      return { error: new Error(validation.error) };
+    }
+
+    // SECURITY: Rate limit creates
+    const rateLimitKey = getRateLimitKey('data:create', userId);
+    const rateLimitResult = rateLimiter.check(rateLimitKey, 'data:create');
+    if (!rateLimitResult.allowed) {
+      return { error: new Error(rateLimitResult.error || 'Too many requests. Please slow down.') };
+    }
+
     const { data, error } = await supabase
       .from('items')
       .insert({
-        ...item,
+        ...validation.sanitized,
         user_id: userId,
       })
       .select()
@@ -71,11 +262,34 @@ export function useItems(userId: string | undefined, collectionId?: string) {
     return { data, error };
   };
 
+  /**
+   * Update an item
+   * SECURITY: Validates ID and all update fields
+   */
   const updateItem = async (id: string, updates: Partial<Item>) => {
+    // SECURITY: Validate ID format
+    const idValidation = validateUUID(id);
+    if (!idValidation.isValid) {
+      return { error: new Error('Invalid item ID') };
+    }
+
+    // SECURITY: Validate and sanitize all update fields
+    const validation = validateItemData(updates as Record<string, any>, ALLOWED_UPDATE_FIELDS);
+    if (!validation.isValid) {
+      return { error: new Error(validation.error) };
+    }
+
+    // SECURITY: Rate limit updates
+    const rateLimitKey = getRateLimitKey('data:update', id);
+    const rateLimitResult = rateLimiter.check(rateLimitKey, 'data:update');
+    if (!rateLimitResult.allowed) {
+      return { error: new Error(rateLimitResult.error || 'Too many requests. Please slow down.') };
+    }
+
     const { data, error } = await supabase
       .from('items')
-      .update(updates)
-      .eq('id', id)
+      .update(validation.sanitized)
+      .eq('id', idValidation.sanitizedValue)
       .select()
       .single();
 
@@ -86,11 +300,28 @@ export function useItems(userId: string | undefined, collectionId?: string) {
     return { data, error };
   };
 
+  /**
+   * Delete an item
+   * SECURITY: Validates ID format
+   */
   const deleteItem = async (id: string) => {
+    // SECURITY: Validate ID format
+    const idValidation = validateUUID(id);
+    if (!idValidation.isValid) {
+      return { error: new Error('Invalid item ID') };
+    }
+
+    // SECURITY: Rate limit deletes
+    const rateLimitKey = getRateLimitKey('data:delete', userId || 'unknown');
+    const rateLimitResult = rateLimiter.check(rateLimitKey, 'data:delete');
+    if (!rateLimitResult.allowed) {
+      return { error: new Error(rateLimitResult.error || 'Too many requests. Please slow down.') };
+    }
+
     const { error } = await supabase
       .from('items')
       .delete()
-      .eq('id', id);
+      .eq('id', idValidation.sanitizedValue);
 
     if (!error) {
       setItems(prev => prev.filter(i => i.id !== id));
@@ -110,6 +341,10 @@ export function useItems(userId: string | undefined, collectionId?: string) {
   };
 }
 
+/**
+ * Fetch a single item by ID
+ * SECURITY: Validates item ID format
+ */
 export function useItem(itemId: string | undefined) {
   const [item, setItem] = useState<Item | null>(null);
   const [loading, setLoading] = useState(true);
@@ -121,12 +356,20 @@ export function useItem(itemId: string | undefined) {
       return;
     }
 
+    // SECURITY: Validate itemId format
+    const idValidation = validateUUID(itemId);
+    if (!idValidation.isValid) {
+      setError('Invalid item ID');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('items')
         .select('*')
-        .eq('id', itemId)
+        .eq('id', idValidation.sanitizedValue)
         .single();
 
       if (error) throw error;
@@ -145,12 +388,17 @@ export function useItem(itemId: string | undefined) {
   return { item, loading, error, refresh: fetchItem };
 }
 
-// Stats hook for dashboard
+/**
+ * Stats hook for dashboard
+ * SECURITY: Validates user ID format
+ */
 export function useItemStats(userId: string | undefined) {
   const [stats, setStats] = useState({
     total: 0,
-    battleReady: 0,
-    shamePile: 0,
+    nibTotal: 0,
+    assembledTotal: 0,
+    primedTotal: 0,
+    paintedTotal: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -160,22 +408,48 @@ export function useItemStats(userId: string | undefined) {
       return;
     }
 
+    // SECURITY: Validate userId format
+    const userIdValidation = validateUUID(userId);
+    if (!userIdValidation.isValid) {
+      console.error('Invalid user ID for stats');
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('items')
-        .select('status, quantity')
-        .eq('user_id', userId);
+        .select('quantity, nib_count, assembled_count, primed_count, painted_count, based_count')
+        .eq('user_id', userIdValidation.sanitizedValue);
 
       if (error) throw error;
 
-      const total = data?.reduce((sum, item) => sum + (item.quantity || 1), 0) || 0;
-      const battleReady = data?.filter(i => i.status === 'painted' || i.status === 'based')
-        .reduce((sum, item) => sum + (item.quantity || 1), 0) || 0;
-      const shamePile = data?.filter(i => i.status === 'nib')
-        .reduce((sum, item) => sum + (item.quantity || 1), 0) || 0;
+      // Calculate totals from individual status counts
+      let total = 0;
+      let nibTotal = 0;
+      let assembledTotal = 0;
+      let primedTotal = 0;
+      let paintedTotal = 0;
 
-      setStats({ total, battleReady, shamePile });
+      data?.forEach(item => {
+        const nib = item.nib_count || 0;
+        const assembled = item.assembled_count || 0;
+        const primed = item.primed_count || 0;
+        const painted = item.painted_count || 0;
+        const based = item.based_count || 0;
+
+        // Total is the sum of all status counts, or fall back to quantity if no counts set
+        const itemTotal = nib + assembled + primed + painted + based;
+        total += itemTotal > 0 ? itemTotal : (item.quantity || 1);
+
+        nibTotal += nib;
+        assembledTotal += assembled;
+        primedTotal += primed;
+        paintedTotal += painted + based; // Include based in painted for display
+      });
+
+      setStats({ total, nibTotal, assembledTotal, primedTotal, paintedTotal });
     } catch (e) {
       console.error('Error fetching stats:', e);
     } finally {
@@ -190,13 +464,27 @@ export function useItemStats(userId: string | undefined) {
   return { stats, loading, refresh: fetchStats };
 }
 
-// Recent items hook
+/**
+ * Recent items hook
+ * SECURITY: Validates user ID and sanitizes limit parameter
+ */
 export function useRecentItems(userId: string | undefined, limit: number = 5) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // SECURITY: Sanitize limit to reasonable bounds (1-100)
+  const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+
   const fetchRecent = useCallback(async () => {
     if (!userId) {
+      setLoading(false);
+      return;
+    }
+
+    // SECURITY: Validate userId format
+    const userIdValidation = validateUUID(userId);
+    if (!userIdValidation.isValid) {
+      console.error('Invalid user ID for recent items');
       setLoading(false);
       return;
     }
@@ -206,9 +494,9 @@ export function useRecentItems(userId: string | undefined, limit: number = 5) {
       const { data, error } = await supabase
         .from('items')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', userIdValidation.sanitizedValue)
         .order('updated_at', { ascending: false })
-        .limit(limit);
+        .limit(safeLimit);
 
       if (error) throw error;
       setItems(data || []);
@@ -217,7 +505,7 @@ export function useRecentItems(userId: string | undefined, limit: number = 5) {
     } finally {
       setLoading(false);
     }
-  }, [userId, limit]);
+  }, [userId, safeLimit]);
 
   useEffect(() => {
     fetchRecent();

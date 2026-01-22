@@ -1,9 +1,21 @@
+/**
+ * Signup Screen
+ *
+ * SECURITY: Implements client-side validation with user-friendly error messages.
+ * Server-side validation is also performed in the auth context.
+ */
 import { useState } from 'react';
 import { StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { router } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import Colors from '@/constants/Colors';
+import {
+  validateEmail,
+  validatePassword,
+  validateUsername,
+  LIMITS,
+} from '@/lib/validation';
 
 export default function SignupScreen() {
   const { signUp } = useAuth();
@@ -18,18 +30,37 @@ export default function SignupScreen() {
   const colors = Colors.light;
 
   const handleSignup = async () => {
+    // SECURITY: Client-side validation for immediate feedback
+    // Note: Server-side validation also occurs in auth context
+
     if (!email || !username || !password || !confirmPassword) {
       setError('Please fill in all fields');
       return;
     }
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
+    // Validate email format
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.isValid) {
+      setError(emailValidation.errors[0]);
       return;
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+    // Validate username
+    const usernameValidation = validateUsername(username);
+    if (!usernameValidation.isValid) {
+      setError(usernameValidation.errors[0]);
+      return;
+    }
+
+    // Validate password
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.isValid) {
+      setError(passwordValidation.errors[0]);
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
 

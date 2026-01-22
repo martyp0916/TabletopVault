@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useItem } from '@/hooks/useItems';
 import { useTheme } from '@/lib/theme';
 import { supabase } from '@/lib/supabase';
-import { GAME_COLORS, STATUS_LABELS, GAME_SYSTEM_LABELS, GameSystem, ItemStatus } from '@/types/database';
+import { GAME_COLORS, STATUS_LABELS, GAME_SYSTEM_LABELS, GameSystem, ItemStatus, getEffectiveStatus } from '@/types/database';
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -107,16 +107,17 @@ export default function ItemDetailScreen() {
       <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.text }}>Item not found</Text>
         <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
-          <Text style={{ color: '#3b82f6' }}>Go back</Text>
+          <Text style={{ color: '#991b1b' }}>Go back</Text>
         </Pressable>
       </View>
     );
   }
 
   const gameColor = GAME_COLORS[item.game_system as GameSystem] || GAME_COLORS.other;
-  const statusColor = getStatusColor(item.status);
+  const effectiveStatus = getEffectiveStatus(item);
+  const statusColor = getStatusColor(effectiveStatus);
   const gameLabel = GAME_SYSTEM_LABELS[item.game_system as GameSystem] || 'Other';
-  const statusLabel = STATUS_LABELS[item.status as ItemStatus] || item.status;
+  const statusLabel = STATUS_LABELS[effectiveStatus];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -224,7 +225,7 @@ export default function ItemDetailScreen() {
         {/* Actions */}
         <View style={styles.actionsSection}>
           <Pressable
-            style={[styles.editButton, { backgroundColor: '#3b82f6' }]}
+            style={[styles.editButton, { backgroundColor: '#991b1b' }]}
             onPress={() => router.push(`/item/edit/${id}`)}
           >
             <FontAwesome name="pencil" size={16} color="#fff" />
@@ -256,6 +257,7 @@ function getStatusColor(status: string): string {
     case 'based': return '#8b5cf6';
     case 'primed': return '#6366f1';
     case 'assembled': return '#f59e0b';
+    case 'wip': return '#f59e0b';
     case 'nib': return '#ef4444';
     default: return '#9ca3af';
   }

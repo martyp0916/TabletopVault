@@ -4,11 +4,13 @@ import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { ImageBackground, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/lib/auth';
-import { ThemeProvider as AppThemeProvider } from '@/lib/theme';
+import { ThemeProvider as AppThemeProvider, useTheme } from '@/lib/theme';
+import { useProfile } from '@/hooks/useProfile';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -46,18 +48,33 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <AppThemeProvider>
-        <RootLayoutNav />
-      </AppThemeProvider>
+      <ThemeWithProfile />
     </AuthProvider>
+  );
+}
+
+// Component that gets profile and passes background to ThemeProvider
+function ThemeWithProfile() {
+  const { user } = useAuth();
+  const { profile } = useProfile(user?.id);
+
+  console.log('[Layout] ThemeWithProfile - profile?.background_image_url:', profile?.background_image_url);
+
+  return (
+    <AppThemeProvider backgroundPath={profile?.background_image_url}>
+      <RootLayoutNav />
+    </AppThemeProvider>
   );
 }
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
   const { user, loading } = useAuth();
+  const { backgroundImageUrl, isDarkMode } = useTheme();
   const segments = useSegments();
   const router = useRouter();
+
+  console.log('[Layout] backgroundImageUrl:', backgroundImageUrl ? 'SET' : 'NULL');
 
   useEffect(() => {
     if (loading) return;
@@ -73,6 +90,36 @@ function RootLayoutNav() {
     }
   }, [user, loading, segments]);
 
+  const backgroundColor = isDarkMode ? '#111827' : '#f9fafb';
+
+  // Render with background image if set
+  if (backgroundImageUrl) {
+    return (
+      <View style={[styles.container, { backgroundColor: isDarkMode ? '#111827' : '#f9fafb' }]}>
+        <ImageBackground
+          source={{ uri: backgroundImageUrl }}
+          style={styles.backgroundImage}
+          resizeMode="cover"
+          onError={(e) => console.log('Background image failed to load:', e.nativeEvent.error)}
+        >
+          <View style={[styles.overlay, { backgroundColor: isDarkMode ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.2)' }]}>
+            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+              <Stack screenOptions={{ contentStyle: { backgroundColor: 'transparent' } }}>
+                <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="collection" options={{ headerShown: false }} />
+                <Stack.Screen name="item" options={{ headerShown: false }} />
+                <Stack.Screen name="profile" options={{ headerShown: false }} />
+                <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+              </Stack>
+            </ThemeProvider>
+          </View>
+        </ImageBackground>
+      </View>
+    );
+  }
+
+  // Default render without background image
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
@@ -80,8 +127,21 @@ function RootLayoutNav() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="collection" options={{ headerShown: false }} />
         <Stack.Screen name="item" options={{ headerShown: false }} />
+        <Stack.Screen name="profile" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  backgroundImage: {
+    flex: 1,
+  },
+  overlay: {
+    flex: 1,
+  },
+});

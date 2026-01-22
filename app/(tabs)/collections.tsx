@@ -1,13 +1,15 @@
-import { StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator, TextInput, Modal, RefreshControl } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator, TextInput, Modal, RefreshControl, Image, ActionSheetIOS, Platform, Alert } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
 import { useCollections } from '@/hooks/useCollections';
 import { supabase } from '@/lib/supabase';
+import * as ImagePicker from 'expo-image-picker';
 const GAME_LIST = [
   'Battle Tech',
   'Bolt Action',
@@ -24,14 +26,23 @@ const GAME_LIST = [
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48 - 12) / 2;
 
-// Colors for collections (cycle through these)
+// Colors for collections (cycle through these) - darker, more dramatic palette
 const COLLECTION_COLORS = [
-  '#3b82f6', '#f59e0b', '#ef4444', '#10b981', '#8b5cf6', '#ec4899',
-  '#06b6d4', '#84cc16', '#f97316', '#6366f1',
+  '#991b1b', // Crimson
+  '#7c3aed', // Purple
+  '#0891b2', // Cyan/teal
+  '#b45309', // Amber/bronze
+  '#059669', // Emerald
+  '#be185d', // Magenta
+  '#4338ca', // Indigo
+  '#65a30d', // Lime
+  '#c2410c', // Orange
+  '#6d28d9', // Violet
 ];
 
 export default function CollectionsScreen() {
-  const { isDarkMode, toggleTheme } = useTheme();
+  const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
+  const hasBackground = !!backgroundImageUrl;
   const [showModal, setShowModal] = useState(false);
   const [selectedGame, setSelectedGame] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -41,8 +52,10 @@ export default function CollectionsScreen() {
 
   const colors = isDarkMode ? Colors.dark : Colors.light;
   const { user } = useAuth();
-  const { collections, loading, createCollection, refresh } = useCollections(user?.id);
+  const { collections, loading, createCollection, updateCollection, refresh } = useCollections(user?.id);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [coverImageUrls, setCoverImageUrls] = useState<Record<string, string>>({});
 
   // Fetch item counts for each collection
   const fetchCounts = useCallback(async () => {
@@ -63,24 +76,185 @@ export default function CollectionsScreen() {
     fetchCounts();
   }, [fetchCounts]);
 
+  // Fetch signed URLs for collection cover images
+  const fetchCoverImages = useCallback(async () => {
+    if (collections.length > 0) {
+      const urls: Record<string, string> = {};
+      for (const col of collections) {
+        if (col.cover_image_url) {
+          const { data: signedUrlData } = await supabase.storage
+            .from('collection-images')
+            .createSignedUrl(col.cover_image_url, 3600);
+          if (signedUrlData?.signedUrl) {
+            urls[col.id] = signedUrlData.signedUrl;
+          }
+        }
+      }
+      setCoverImageUrls(urls);
+    }
+  }, [collections]);
+
+  useEffect(() => {
+    fetchCoverImages();
+  }, [fetchCoverImages]);
+
+  // Refresh data when screen comes into focus (e.g., returning from edit)
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [])
+  );
+
+  const pickImage = async (useCamera: boolean) => {
+    if (useCamera) {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permission is required to take photos.');
+        return;
+      }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Photo library permission is required to select photos.');
+        return;
+      }
+    }
+
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+
+    if (!result.canceled && result.assets[0]) {
+      setSelectedImage(result.assets[0].uri);
+    }
+  };
+
+  const showImageOptions = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Take Photo', 'Choose from Library'],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) pickImage(true);
+          if (buttonIndex === 2) pickImage(false);
+        }
+      );
+    } else {
+      Alert.alert('Add Cover Image', 'Choose an option', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Take Photo', onPress: () => pickImage(true) },
+        { text: 'Choose from Library', onPress: () => pickImage(false) },
+      ]);
+    }
+  };
+
+  const uploadCoverImage = async (collectionId: string): Promise<string | null> => {
+    if (!selectedImage || !user) return null;
+
+    try {
+      // Get file extension from URI (handle query params)
+      const uriWithoutParams = selectedImage.split('?')[0];
+      const fileExt = uriWithoutParams.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${user.id}/${collectionId}/${Date.now()}.${fileExt}`;
+
+      // Fetch the image and convert to arrayBuffer
+      const response = await fetch(selectedImage);
+      const arrayBuffer = await response.arrayBuffer();
+
+      const { error: uploadError } = await supabase.storage
+        .from('collection-images')
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        return null;
+      }
+
+      return fileName;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      return null;
+    }
+  };
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refresh();
     await fetchCounts();
+    await fetchCoverImages();
     setRefreshing(false);
-  }, [refresh, fetchCounts]);
+  }, [refresh, fetchCounts, fetchCoverImages]);
 
   const handleCreateCollection = async () => {
     if (!selectedGame) return;
 
     setCreating(true);
-    const { error } = await createCollection(selectedGame, newDescription.trim() || undefined);
-    setCreating(false);
+    const { data: newCollection, error } = await createCollection(selectedGame, newDescription.trim() || undefined);
 
-    if (!error) {
-      setShowModal(false);
-      setSelectedGame('');
-      setNewDescription('');
+    if (error) {
+      setCreating(false);
+      Alert.alert('Error', error.message);
+      return;
+    }
+
+    // Upload cover image if selected
+    let needsCoverImageRefresh = false;
+    if (selectedImage && newCollection) {
+      const imagePath = await uploadCoverImage(newCollection.id);
+      if (imagePath) {
+        await updateCollection(newCollection.id, { cover_image_url: imagePath });
+        needsCoverImageRefresh = true;
+      }
+    }
+
+    // Reset form and close modal
+    setCreating(false);
+    setShowModal(false);
+    setSelectedGame('');
+    setNewDescription('');
+    setSelectedImage(null);
+
+    // Refresh everything after modal closes to ensure state is updated
+    if (needsCoverImageRefresh) {
+      // Small delay to let React process the state updates
+      setTimeout(async () => {
+        await refresh();
+        // Fetch cover images directly from the database
+        const { data: freshCollections } = await supabase
+          .from('collections')
+          .select('id, cover_image_url')
+          .not('cover_image_url', 'is', null);
+
+        if (freshCollections) {
+          const urls: Record<string, string> = {};
+          for (const col of freshCollections) {
+            if (col.cover_image_url) {
+              const { data: signedUrlData } = await supabase.storage
+                .from('collection-images')
+                .createSignedUrl(col.cover_image_url, 3600);
+              if (signedUrlData?.signedUrl) {
+                urls[col.id] = signedUrlData.signedUrl;
+              }
+            }
+          }
+          setCoverImageUrls(urls);
+        }
+      }, 100);
     }
   };
 
@@ -90,7 +264,7 @@ export default function CollectionsScreen() {
 
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
+      style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}
       showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl
@@ -150,10 +324,18 @@ export default function CollectionsScreen() {
               style={[styles.card, { backgroundColor: colors.card }]}
               onPress={() => router.push(`/collection/${collection.id}`)}
             >
-              {/* Color Banner */}
-              <View style={[styles.cardBanner, { backgroundColor: getCollectionColor(index) }]}>
-                <FontAwesome name="folder" size={32} color="rgba(255,255,255,0.9)" />
-              </View>
+              {/* Cover Image or Color Banner */}
+              {coverImageUrls[collection.id] ? (
+                <Image
+                  source={{ uri: coverImageUrls[collection.id] }}
+                  style={[styles.cardBannerImage, { backgroundColor: colors.card }]}
+                  resizeMode="contain"
+                />
+              ) : (
+                <View style={[styles.cardBanner, { backgroundColor: getCollectionColor(index) }]}>
+                  <FontAwesome name="folder" size={32} color="rgba(255,255,255,0.9)" />
+                </View>
+              )}
 
               {/* Card Content */}
               <View style={styles.cardContent}>
@@ -187,14 +369,14 @@ export default function CollectionsScreen() {
       >
         <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           <View style={styles.modalHeader}>
-            <Pressable onPress={() => { setShowModal(false); setShowDropdown(false); }}>
+            <Pressable onPress={() => { setShowModal(false); setShowDropdown(false); setSelectedImage(null); }}>
               <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
             </Pressable>
             <Text style={[styles.modalTitle, { color: colors.text }]}>New Collection</Text>
             <Pressable onPress={handleCreateCollection} disabled={creating || !selectedGame}>
               <Text style={[
                 styles.modalSave,
-                { color: selectedGame ? '#3b82f6' : colors.textSecondary }
+                { color: selectedGame ? '#991b1b' : colors.textSecondary }
               ]}>
                 {creating ? 'Saving...' : 'Save'}
               </Text>
@@ -239,17 +421,45 @@ export default function CollectionsScreen() {
                       >
                         <Text style={[
                           styles.dropdownItemText,
-                          { color: selectedGame === game ? '#3b82f6' : colors.text }
+                          { color: selectedGame === game ? '#991b1b' : colors.text }
                         ]}>
                           {game}
                         </Text>
                         {selectedGame === game && (
-                          <FontAwesome name="check" size={14} color="#3b82f6" />
+                          <FontAwesome name="check" size={14} color="#991b1b" />
                         )}
                       </Pressable>
                     ))}
                   </ScrollView>
                 </View>
+              )}
+            </View>
+
+            {/* Cover Image Picker */}
+            <View style={styles.inputGroup}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>Cover Image (optional)</Text>
+              <Pressable
+                style={[styles.imagePicker, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={showImageOptions}
+              >
+                {selectedImage ? (
+                  <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+                ) : (
+                  <>
+                    <FontAwesome name="image" size={24} color={colors.textSecondary} />
+                    <Text style={[styles.imagePickerText, { color: colors.textSecondary }]}>
+                      Add faction logo or photo
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+              {selectedImage && (
+                <Pressable
+                  style={styles.removeImageButton}
+                  onPress={() => setSelectedImage(null)}
+                >
+                  <Text style={styles.removeImageText}>Remove Image</Text>
+                </Pressable>
               )}
             </View>
 
@@ -338,9 +548,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   cardBanner: {
-    height: 80,
+    height: 120,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  cardBannerImage: {
+    width: '100%',
+    height: 120,
   },
   cardContent: {
     padding: 12,
@@ -468,5 +682,33 @@ const styles = StyleSheet.create({
     height: 100,
     paddingTop: 14,
     textAlignVertical: 'top',
+  },
+  imagePicker: {
+    height: 120,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  imagePickerText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
+  },
+  removeImageButton: {
+    alignSelf: 'center',
+    marginTop: 8,
+    padding: 8,
+  },
+  removeImageText: {
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

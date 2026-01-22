@@ -1,14 +1,15 @@
-import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl, Image } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
 import { useCollection, useCollections } from '@/hooks/useCollections';
 import { useItems } from '@/hooks/useItems';
-import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus } from '@/types/database';
+import { supabase } from '@/lib/supabase';
+import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus, getEffectiveStatus } from '@/types/database';
 
 export default function CollectionDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -21,8 +22,27 @@ export default function CollectionDetailScreen() {
   const { deleteCollection } = useCollections(user?.id);
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
 
   const loading = collectionLoading || itemsLoading;
+
+  // Fetch cover image signed URL
+  const fetchCoverImage = useCallback(async () => {
+    if (collection?.cover_image_url) {
+      const { data: signedUrlData } = await supabase.storage
+        .from('collection-images')
+        .createSignedUrl(collection.cover_image_url, 3600);
+      if (signedUrlData?.signedUrl) {
+        setCoverImageUrl(signedUrlData.signedUrl);
+      }
+    } else {
+      setCoverImageUrl(null);
+    }
+  }, [collection]);
+
+  useEffect(() => {
+    fetchCoverImage();
+  }, [fetchCoverImage]);
 
   const handleDeleteCollection = () => {
     Alert.alert(
@@ -50,14 +70,15 @@ export default function CollectionDetailScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refreshCollection(), refreshItems()]);
+    await Promise.all([refreshCollection(), refreshItems(), fetchCoverImage()]);
     setRefreshing(false);
-  }, [refreshCollection, refreshItems]);
+  }, [refreshCollection, refreshItems, fetchCoverImage]);
 
-  // Calculate stats
-  const battleReadyCount = items.filter(i => i.status === 'painted' || i.status === 'based').length;
-  const inProgressCount = items.filter(i => i.status === 'assembled' || i.status === 'primed').length;
-  const shamePileCount = items.filter(i => i.status === 'nib').length;
+  // Calculate stats from status counts
+  const nibTotal = items.reduce((sum, i) => sum + (i.nib_count || 0), 0);
+  const assembledTotal = items.reduce((sum, i) => sum + (i.assembled_count || 0), 0);
+  const primedTotal = items.reduce((sum, i) => sum + (i.primed_count || 0), 0);
+  const paintedTotal = items.reduce((sum, i) => sum + (i.painted_count || 0), 0);
 
   if (loading) {
     return (
@@ -72,7 +93,7 @@ export default function CollectionDetailScreen() {
       <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.text }}>Collection not found</Text>
         <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
-          <Text style={{ color: '#3b82f6' }}>Go back</Text>
+          <Text style={{ color: '#991b1b' }}>Go back</Text>
         </Pressable>
       </View>
     );
@@ -106,9 +127,20 @@ export default function CollectionDetailScreen() {
           />
         }
       >
+        {/* Cover Image */}
+        {coverImageUrl && (
+          <View style={[styles.coverImageContainer, { backgroundColor: colors.card }]}>
+            <Image
+              source={{ uri: coverImageUrl }}
+              style={styles.coverImage}
+              resizeMode="contain"
+            />
+          </View>
+        )}
+
         {/* Collection Info */}
         <View style={styles.infoSection}>
-          <View style={[styles.colorBar, { backgroundColor: '#3b82f6' }]} />
+          <View style={[styles.colorBar, { backgroundColor: '#991b1b' }]} />
           <View style={styles.infoContent}>
             <Text style={[styles.description, { color: colors.textSecondary }]}>
               {collection.description || 'No description'}
@@ -122,22 +154,28 @@ export default function CollectionDetailScreen() {
         {/* Stats */}
         <View style={styles.statsRow}>
           <View style={styles.stat}>
-            <Text style={[styles.statNumber, { color: '#10b981' }]}>
-              {battleReadyCount}
+            <Text style={[styles.statNumber, { color: '#6b7280' }]}>
+              {nibTotal}
             </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Battle Ready</Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>New in Box</Text>
           </View>
           <View style={styles.stat}>
             <Text style={[styles.statNumber, { color: '#f59e0b' }]}>
-              {inProgressCount}
+              {assembledTotal}
             </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>In Progress</Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Assembled</Text>
           </View>
           <View style={styles.stat}>
-            <Text style={[styles.statNumber, { color: '#ef4444' }]}>
-              {shamePileCount}
+            <Text style={[styles.statNumber, { color: '#6366f1' }]}>
+              {primedTotal}
             </Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Shame Pile</Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Primed</Text>
+          </View>
+          <View style={styles.stat}>
+            <Text style={[styles.statNumber, { color: '#10b981' }]}>
+              {paintedTotal}
+            </Text>
+            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Painted</Text>
           </View>
         </View>
 
@@ -146,7 +184,7 @@ export default function CollectionDetailScreen() {
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>ITEMS</Text>
             <Pressable onPress={() => router.push('/(tabs)/add')}>
-              <Text style={[styles.addText, { color: '#3b82f6' }]}>+ Add</Text>
+              <Text style={[styles.addText, { color: '#991b1b' }]}>+ Add</Text>
             </Pressable>
           </View>
 
@@ -170,15 +208,15 @@ export default function CollectionDetailScreen() {
                 ]}
                 onPress={() => router.push(`/item/${item.id}`)}
               >
-                <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
+                <View style={[styles.statusDot, { backgroundColor: getStatusColor(getEffectiveStatus(item)) }]} />
                 <View style={styles.itemInfo}>
                   <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
                   <Text style={[styles.itemFaction, { color: colors.textSecondary }]}>
                     {item.faction || 'No faction'}
                   </Text>
                 </View>
-                <Text style={[styles.itemStatus, { color: getStatusColor(item.status) }]}>
-                  {STATUS_LABELS[item.status] || item.status}
+                <Text style={[styles.itemStatus, { color: getStatusColor(getEffectiveStatus(item)) }]}>
+                  {STATUS_LABELS[getEffectiveStatus(item)]}
                 </Text>
               </Pressable>
             ))
@@ -188,7 +226,7 @@ export default function CollectionDetailScreen() {
         {/* Action Buttons */}
         <View style={styles.actionsSection}>
           <Pressable
-            style={[styles.editButton, { backgroundColor: '#3b82f6' }]}
+            style={[styles.editButton, { backgroundColor: '#991b1b' }]}
             onPress={() => router.push(`/collection/edit/${id}`)}
           >
             <FontAwesome name="pencil" size={16} color="#fff" />
@@ -221,6 +259,7 @@ function getStatusColor(status: string): string {
     case 'based': return '#8b5cf6';
     case 'primed': return '#6366f1';
     case 'assembled': return '#f59e0b';
+    case 'wip': return '#f59e0b';
     case 'nib': return '#ef4444';
     default: return '#9ca3af';
   }
@@ -253,6 +292,16 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: '700',
+  },
+  coverImageContainer: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  coverImage: {
+    width: '100%',
+    height: 180,
   },
   infoSection: {
     flexDirection: 'row',

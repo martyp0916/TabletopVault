@@ -3,7 +3,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs } from 'expo-router';
 
 import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
+import { useTheme } from '@/lib/theme';
 
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof FontAwesome>['name'];
@@ -13,21 +13,23 @@ function TabBarIcon(props: {
 }
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { isDarkMode, backgroundImageUrl } = useTheme();
+  const colors = isDarkMode ? Colors.dark : Colors.light;
+  const hasBackground = !!backgroundImageUrl;
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'dark'].tint,
-        tabBarInactiveTintColor: Colors[colorScheme ?? 'dark'].tabIconDefault,
+        tabBarActiveTintColor: colors.tint,
+        tabBarInactiveTintColor: colors.tabIconDefault,
         tabBarStyle: {
-          backgroundColor: Colors[colorScheme ?? 'dark'].card,
-          borderTopColor: Colors[colorScheme ?? 'dark'].border,
+          backgroundColor: hasBackground ? 'rgba(0,0,0,0.6)' : colors.card,
+          borderTopColor: hasBackground ? 'transparent' : colors.border,
         },
-        headerStyle: {
-          backgroundColor: Colors[colorScheme ?? 'dark'].card,
+        headerShown: false,
+        sceneStyle: {
+          backgroundColor: 'transparent',
         },
-        headerTintColor: Colors[colorScheme ?? 'dark'].text,
       }}>
       <Tabs.Screen
         name="index"

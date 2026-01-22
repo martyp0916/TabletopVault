@@ -9,14 +9,6 @@ import { useTheme } from '@/lib/theme';
 import { useItem, useItems } from '@/hooks/useItems';
 import { ItemStatus } from '@/types/database';
 
-const STATUSES: { value: ItemStatus; label: string }[] = [
-  { value: 'nib', label: 'New in Box' },
-  { value: 'assembled', label: 'Assembled' },
-  { value: 'primed', label: 'Primed' },
-  { value: 'painted', label: 'Painted' },
-  { value: 'based', label: 'Based' },
-];
-
 export default function EditItemScreen() {
   const { id } = useLocalSearchParams();
   const { isDarkMode, toggleTheme } = useTheme();
@@ -30,9 +22,15 @@ export default function EditItemScreen() {
   const [name, setName] = useState('');
   const [faction, setFaction] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [status, setStatus] = useState<ItemStatus | ''>('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Status counts
+  const [nibCount, setNibCount] = useState('0');
+  const [assembledCount, setAssembledCount] = useState('0');
+  const [primedCount, setPrimedCount] = useState('0');
+  const [paintedCount, setPaintedCount] = useState('0');
+  const [basedCount, setBasedCount] = useState('0');
 
   // Populate form with existing item data
   useEffect(() => {
@@ -40,8 +38,12 @@ export default function EditItemScreen() {
       setName(item.name || '');
       setFaction(item.faction || '');
       setQuantity(String(item.quantity || 1));
-      setStatus(item.status || '');
       setNotes(item.notes || '');
+      setNibCount(String(item.nib_count || 0));
+      setAssembledCount(String(item.assembled_count || 0));
+      setPrimedCount(String(item.primed_count || 0));
+      setPaintedCount(String(item.painted_count || 0));
+      setBasedCount(String(item.based_count || 0));
     }
   }, [item]);
 
@@ -53,11 +55,30 @@ export default function EditItemScreen() {
 
     setSaving(true);
 
+    // Parse status counts
+    const nib = parseInt(nibCount) || 0;
+    const assembled = parseInt(assembledCount) || 0;
+    const primed = parseInt(primedCount) || 0;
+    const painted = parseInt(paintedCount) || 0;
+    const based = parseInt(basedCount) || 0;
+
+    // Derive overall status from counts (highest progress level with models)
+    let derivedStatus: ItemStatus = 'nib';
+    if (based > 0) derivedStatus = 'based';
+    else if (painted > 0) derivedStatus = 'painted';
+    else if (primed > 0) derivedStatus = 'primed';
+    else if (assembled > 0) derivedStatus = 'assembled';
+
     const { error } = await updateItem(id as string, {
       name: name.trim(),
       faction: faction.trim() || null,
       quantity: parseInt(quantity) || 1,
-      status: status || 'nib',
+      status: derivedStatus,
+      nib_count: nib,
+      assembled_count: assembled,
+      primed_count: primed,
+      painted_count: painted,
+      based_count: based,
       notes: notes.trim() || null,
     });
 
@@ -86,7 +107,7 @@ export default function EditItemScreen() {
       <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.text }}>Item not found</Text>
         <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
-          <Text style={{ color: '#3b82f6' }}>Go back</Text>
+          <Text style={{ color: '#991b1b' }}>Go back</Text>
         </Pressable>
       </View>
     );
@@ -138,7 +159,7 @@ export default function EditItemScreen() {
 
           {/* Quantity */}
           <View style={styles.fieldGroup}>
-            <Text style={[styles.label, { color: colors.text }]}>Quantity</Text>
+            <Text style={[styles.label, { color: colors.text }]}>Models per Box</Text>
             <TextInput
               style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
               placeholder="1"
@@ -149,30 +170,69 @@ export default function EditItemScreen() {
             />
           </View>
 
-          {/* Status */}
+          {/* Status Counts */}
           <View style={styles.fieldGroup}>
-            <Text style={[styles.label, { color: colors.text }]}>Status</Text>
-            <View style={styles.chipContainer}>
-              {STATUSES.map((s) => (
-                <Pressable
-                  key={s.value}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor: status === s.value ? getStatusColor(s.value) : colors.card,
-                      borderColor: status === s.value ? getStatusColor(s.value) : colors.border,
-                    }
-                  ]}
-                  onPress={() => setStatus(s.value)}
-                >
-                  <Text style={[
-                    styles.chipText,
-                    { color: status === s.value ? '#fff' : colors.text }
-                  ]}>
-                    {s.label}
-                  </Text>
-                </Pressable>
-              ))}
+            <Text style={[styles.label, { color: colors.text }]}>Status Breakdown</Text>
+            <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+              How many models are in each stage?
+            </Text>
+
+            <View style={styles.statusCountsContainer}>
+              {/* New in Box */}
+              <View style={styles.statusCountRow}>
+                <View style={[styles.statusDot, { backgroundColor: '#6b7280' }]} />
+                <Text style={[styles.statusCountLabel, { color: colors.text }]}>New in Box</Text>
+                <TextInput
+                  style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                  value={nibCount}
+                  onChangeText={setNibCount}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+
+              {/* Assembled */}
+              <View style={styles.statusCountRow}>
+                <View style={[styles.statusDot, { backgroundColor: '#f59e0b' }]} />
+                <Text style={[styles.statusCountLabel, { color: colors.text }]}>Assembled</Text>
+                <TextInput
+                  style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                  value={assembledCount}
+                  onChangeText={setAssembledCount}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+
+              {/* Primed */}
+              <View style={styles.statusCountRow}>
+                <View style={[styles.statusDot, { backgroundColor: '#6366f1' }]} />
+                <Text style={[styles.statusCountLabel, { color: colors.text }]}>Primed</Text>
+                <TextInput
+                  style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                  value={primedCount}
+                  onChangeText={setPrimedCount}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+
+              {/* Painted */}
+              <View style={styles.statusCountRow}>
+                <View style={[styles.statusDot, { backgroundColor: '#10b981' }]} />
+                <Text style={[styles.statusCountLabel, { color: colors.text }]}>Painted</Text>
+                <TextInput
+                  style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                  value={paintedCount}
+                  onChangeText={setPaintedCount}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
             </View>
           </View>
 
@@ -210,17 +270,6 @@ export default function EditItemScreen() {
       </ScrollView>
     </View>
   );
-}
-
-function getStatusColor(status: string): string {
-  switch (status) {
-    case 'painted': return '#10b981';
-    case 'primed': return '#6366f1';
-    case 'assembled': return '#f59e0b';
-    case 'based': return '#ec4899';
-    case 'nib': return '#6b7280';
-    default: return '#6b7280';
-  }
 }
 
 const styles = StyleSheet.create({
@@ -279,27 +328,43 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: 'transparent',
   },
-  chipContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  helperText: {
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  statusCountsContainer: {
+    gap: 10,
     backgroundColor: 'transparent',
   },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
+  statusCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
   },
-  chipText: {
-    fontSize: 14,
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  statusCountLabel: {
+    flex: 1,
+    fontSize: 15,
     fontWeight: '500',
+  },
+  statusCountInput: {
+    width: 60,
+    padding: 10,
+    borderRadius: 8,
+    fontSize: 16,
+    textAlign: 'center',
+    borderWidth: 1,
   },
   submitButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#3b82f6',
+    backgroundColor: '#991b1b',
     padding: 16,
     borderRadius: 12,
     gap: 8,

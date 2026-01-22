@@ -1,24 +1,54 @@
-import { StyleSheet, ScrollView, Pressable, Switch, ActivityIndicator, Alert } from 'react-native';
-import { Text, View } from '@/components/Themed';
+import { StyleSheet, ScrollView, Pressable, Switch, ActivityIndicator, Alert, Image, View } from 'react-native';
+import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { router } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
 import { useProfile } from '@/hooks/useProfile';
 import { useCollections } from '@/hooks/useCollections';
 import { useItemStats } from '@/hooks/useItems';
+import { supabase } from '@/lib/supabase';
 
 export default function ProfileScreen() {
-  const { isDarkMode, toggleTheme } = useTheme();
+  const { isDarkMode, backgroundImageUrl } = useTheme();
+  const hasBackground = !!backgroundImageUrl;
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user, signOut } = useAuth();
-  const { profile, loading: profileLoading } = useProfile(user?.id);
+  const { profile, loading: profileLoading, refresh: refreshProfile } = useProfile(user?.id);
   const { collections } = useCollections(user?.id);
   const { stats } = useItemStats(user?.id);
+
+  // Fetch avatar signed URL
+  const fetchAvatar = useCallback(async () => {
+    if (profile?.avatar_url) {
+      const { data: signedUrlData } = await supabase.storage
+        .from('profile-images')
+        .createSignedUrl(profile.avatar_url, 3600);
+      if (signedUrlData?.signedUrl) {
+        setAvatarUrl(signedUrlData.signedUrl);
+      }
+    } else {
+      setAvatarUrl(null);
+    }
+  }, [profile?.avatar_url]);
+
+  useEffect(() => {
+    fetchAvatar();
+  }, [fetchAvatar]);
+
+  // Refresh profile when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      refreshProfile();
+    }, [])
+  );
 
   const handleLogout = () => {
     Alert.alert(
@@ -44,7 +74,7 @@ export default function ProfileScreen() {
 
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
+      style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}
       showsVerticalScrollIndicator={false}
     >
       {/* Header */}
@@ -55,9 +85,17 @@ export default function ProfileScreen() {
       {/* User Card */}
       <View style={[styles.userCard, { backgroundColor: colors.card }]}>
         <View style={styles.avatarContainer}>
-          <View style={[styles.avatar, { backgroundColor: '#374151' }]}>
-            <FontAwesome name="user" size={40} color="#fff" />
-          </View>
+          {avatarUrl ? (
+            <Image
+              source={{ uri: avatarUrl }}
+              style={styles.avatarImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: '#374151' }]}>
+              <FontAwesome name="user" size={40} color="#fff" />
+            </View>
+          )}
         </View>
         <Text style={[styles.userName, { color: colors.text }]}>
           {profile?.username || 'Battle Brother'}
@@ -87,22 +125,6 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SETTINGS</Text>
 
-        {/* Dark Mode Toggle */}
-        <View style={[styles.settingRow, { backgroundColor: colors.card }]}>
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: '#374151' }]}>
-              <FontAwesome name="moon-o" size={16} color="#fff" />
-            </View>
-            <Text style={[styles.settingText, { color: colors.text }]}>Dark Mode</Text>
-          </View>
-          <Switch
-            value={isDarkMode}
-            onValueChange={toggleTheme}
-            trackColor={{ false: colors.border, true: '#374151' }}
-            thumbColor="#fff"
-          />
-        </View>
-
         {/* Notifications Toggle */}
         <View style={[styles.settingRow, { backgroundColor: colors.card }]}>
           <View style={styles.settingLeft}>
@@ -124,9 +146,12 @@ export default function ProfileScreen() {
       <View style={styles.section}>
         <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>ACCOUNT</Text>
 
-        <Pressable style={[styles.menuRow, { backgroundColor: colors.card }]}>
+        <Pressable
+          style={[styles.menuRow, { backgroundColor: colors.card }]}
+          onPress={() => router.push('/profile/edit')}
+        >
           <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: '#3b82f6' }]}>
+            <View style={[styles.settingIcon, { backgroundColor: '#991b1b' }]}>
               <FontAwesome name="user" size={16} color="#fff" />
             </View>
             <Text style={[styles.settingText, { color: colors.text }]}>Edit Profile</Text>
@@ -134,7 +159,10 @@ export default function ProfileScreen() {
           <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
         </Pressable>
 
-        <Pressable style={[styles.menuRow, { backgroundColor: colors.card }]}>
+        <Pressable
+          style={[styles.menuRow, { backgroundColor: colors.card }]}
+          onPress={() => router.push('/profile/change-password')}
+        >
           <View style={styles.settingLeft}>
             <View style={[styles.settingIcon, { backgroundColor: '#10b981' }]}>
               <FontAwesome name="lock" size={16} color="#fff" />
@@ -146,7 +174,7 @@ export default function ProfileScreen() {
 
         <Pressable style={[styles.menuRow, { backgroundColor: colors.card }]}>
           <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: '#8b5cf6' }]}>
+            <View style={[styles.settingIcon, { backgroundColor: '#0891b2' }]}>
               <FontAwesome name="download" size={16} color="#fff" />
             </View>
             <Text style={[styles.settingText, { color: colors.text }]}>Export Data</Text>
@@ -229,11 +257,21 @@ const styles = StyleSheet.create({
   avatarContainer: {
     position: 'relative',
     marginBottom: 16,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    overflow: 'hidden',
   },
   avatar: {
     width: 100,
     height: 100,
     borderRadius: 50,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -255,6 +293,7 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     borderTopWidth: 1,
     width: '100%',
+    backgroundColor: 'transparent',
   },
   stat: {
     flex: 1,

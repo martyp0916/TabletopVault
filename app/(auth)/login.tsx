@@ -1,9 +1,16 @@
+/**
+ * Login Screen
+ *
+ * SECURITY: Implements client-side validation for email format.
+ * Server-side validation and rate limiting also occurs in auth context.
+ */
 import { useState } from 'react';
 import { StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { router } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import Colors from '@/constants/Colors';
+import { validateEmail } from '@/lib/validation';
 
 export default function LoginScreen() {
   const { signIn } = useAuth();
@@ -17,6 +24,13 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (!email || !password) {
       setError('Please fill in all fields');
+      return;
+    }
+
+    // SECURITY: Validate email format before sending to server
+    const emailValidation = validateEmail(email);
+    if (!emailValidation.isValid) {
+      setError(emailValidation.errors[0]);
       return;
     }
 

@@ -8,17 +8,9 @@ import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
 import { useCollections } from '@/hooks/useCollections';
 import { useItems } from '@/hooks/useItems';
-import { GameSystem, ItemStatus, GAME_SYSTEM_LABELS, STATUS_LABELS } from '@/types/database';
+import { GameSystem, ItemStatus } from '@/types/database';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '@/lib/supabase';
-
-const STATUSES: { value: ItemStatus; label: string }[] = [
-  { value: 'nib', label: 'New in Box' },
-  { value: 'assembled', label: 'Assembled' },
-  { value: 'primed', label: 'Primed' },
-  { value: 'painted', label: 'Painted' },
-  { value: 'based', label: 'Based' },
-];
 
 function getGameSystemFromName(name: string): GameSystem {
   const nameMap: Record<string, GameSystem> = {
@@ -38,8 +30,9 @@ function getGameSystemFromName(name: string): GameSystem {
 }
 
 export default function AddScreen() {
-  const { isDarkMode, toggleTheme } = useTheme();
+  const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
+  const hasBackground = !!backgroundImageUrl;
 
   const { user } = useAuth();
   const { collections, loading: collectionsLoading } = useCollections(user?.id);
@@ -49,12 +42,18 @@ export default function AddScreen() {
   const [name, setName] = useState('');
   const [faction, setFaction] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [status, setStatus] = useState<ItemStatus | ''>('');
   const [notes, setNotes] = useState('');
   const [selectedCollection, setSelectedCollection] = useState('');
   const [saving, setSaving] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showCollectionDropdown, setShowCollectionDropdown] = useState(false);
+
+  // Status counts
+  const [nibCount, setNibCount] = useState('0');
+  const [assembledCount, setAssembledCount] = useState('0');
+  const [primedCount, setPrimedCount] = useState('0');
+  const [paintedCount, setPaintedCount] = useState('0');
+  const [basedCount, setBasedCount] = useState('0');
 
   const pickImage = async (useCamera: boolean) => {
     // Request permissions
@@ -116,16 +115,19 @@ export default function AddScreen() {
     if (!selectedImage || !user) return null;
 
     try {
-      const response = await fetch(selectedImage);
-      const blob = await response.blob();
-
-      const fileExt = selectedImage.split('.').pop()?.toLowerCase() || 'jpg';
+      // Get file extension from URI (handle query params)
+      const uriWithoutParams = selectedImage.split('?')[0];
+      const fileExt = uriWithoutParams.split('.').pop()?.toLowerCase() || 'jpg';
       const fileName = `${user.id}/${itemId}/${Date.now()}.${fileExt}`;
+
+      // Fetch the image and convert to arrayBuffer
+      const response = await fetch(selectedImage);
+      const arrayBuffer = await response.arrayBuffer();
 
       const { error: uploadError } = await supabase.storage
         .from('item-images')
-        .upload(fileName, blob, {
-          contentType: `image/${fileExt}`,
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
           upsert: false,
         });
 
@@ -153,9 +155,13 @@ export default function AddScreen() {
     setName('');
     setFaction('');
     setQuantity('1');
-    setStatus('');
     setNotes('');
     setSelectedImage(null);
+    setNibCount('0');
+    setAssembledCount('0');
+    setPrimedCount('0');
+    setPaintedCount('0');
+    setBasedCount('0');
   };
 
   const handleSubmit = async () => {
@@ -175,13 +181,32 @@ export default function AddScreen() {
     const selectedCol = collections.find(c => c.id === selectedCollection);
     const derivedGameSystem = getGameSystemFromName(selectedCol?.name || '');
 
+    // Parse status counts
+    const nib = parseInt(nibCount) || 0;
+    const assembled = parseInt(assembledCount) || 0;
+    const primed = parseInt(primedCount) || 0;
+    const painted = parseInt(paintedCount) || 0;
+    const based = parseInt(basedCount) || 0;
+
+    // Derive overall status from counts (highest progress level with models)
+    let derivedStatus: ItemStatus = 'nib';
+    if (based > 0) derivedStatus = 'based';
+    else if (painted > 0) derivedStatus = 'painted';
+    else if (primed > 0) derivedStatus = 'primed';
+    else if (assembled > 0) derivedStatus = 'assembled';
+
     const { data: newItem, error } = await createItem({
       collection_id: selectedCollection,
       name: name.trim(),
       game_system: derivedGameSystem,
       faction: faction.trim() || undefined,
       quantity: parseInt(quantity) || 1,
-      status: status || 'nib',
+      status: derivedStatus,
+      nib_count: nib,
+      assembled_count: assembled,
+      primed_count: primed,
+      painted_count: painted,
+      based_count: based,
       notes: notes.trim() || undefined,
     });
 
@@ -215,7 +240,7 @@ export default function AddScreen() {
 
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
+      style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
@@ -323,12 +348,12 @@ export default function AddScreen() {
                       >
                         <Text style={[
                           styles.dropdownItemText,
-                          { color: selectedCollection === col.id ? '#3b82f6' : colors.text }
+                          { color: selectedCollection === col.id ? '#991b1b' : colors.text }
                         ]}>
                           {col.description ? `${col.description} (${col.name})` : col.name}
                         </Text>
                         {selectedCollection === col.id && (
-                          <FontAwesome name="check" size={14} color="#3b82f6" />
+                          <FontAwesome name="check" size={14} color="#991b1b" />
                         )}
                       </Pressable>
                     ))}
@@ -365,7 +390,7 @@ export default function AddScreen() {
 
         {/* Quantity */}
         <View style={styles.fieldGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Quantity</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Models per Box</Text>
           <TextInput
             style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
             placeholder="1"
@@ -376,30 +401,69 @@ export default function AddScreen() {
           />
         </View>
 
-        {/* Status */}
+        {/* Status Counts */}
         <View style={styles.fieldGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Status</Text>
-          <View style={styles.chipContainer}>
-            {STATUSES.map((s) => (
-              <Pressable
-                key={s.value}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor: status === s.value ? getStatusColor(s.value) : colors.card,
-                    borderColor: status === s.value ? getStatusColor(s.value) : colors.border,
-                  }
-                ]}
-                onPress={() => setStatus(s.value)}
-              >
-                <Text style={[
-                  styles.chipText,
-                  { color: status === s.value ? '#fff' : colors.text }
-                ]}>
-                  {s.label}
-                </Text>
-              </Pressable>
-            ))}
+          <Text style={[styles.label, { color: colors.text }]}>Status Breakdown</Text>
+          <Text style={[styles.helperText, { color: colors.textSecondary }]}>
+            How many models are in each stage?
+          </Text>
+
+          <View style={styles.statusCountsContainer}>
+            {/* New in Box */}
+            <View style={styles.statusCountRow}>
+              <View style={[styles.statusDot, { backgroundColor: '#6b7280' }]} />
+              <Text style={[styles.statusCountLabel, { color: colors.text }]}>New in Box</Text>
+              <TextInput
+                style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                value={nibCount}
+                onChangeText={setNibCount}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
+
+            {/* Assembled */}
+            <View style={styles.statusCountRow}>
+              <View style={[styles.statusDot, { backgroundColor: '#f59e0b' }]} />
+              <Text style={[styles.statusCountLabel, { color: colors.text }]}>Assembled</Text>
+              <TextInput
+                style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                value={assembledCount}
+                onChangeText={setAssembledCount}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
+
+            {/* Primed */}
+            <View style={styles.statusCountRow}>
+              <View style={[styles.statusDot, { backgroundColor: '#6366f1' }]} />
+              <Text style={[styles.statusCountLabel, { color: colors.text }]}>Primed</Text>
+              <TextInput
+                style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                value={primedCount}
+                onChangeText={setPrimedCount}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
+
+            {/* Painted */}
+            <View style={styles.statusCountRow}>
+              <View style={[styles.statusDot, { backgroundColor: '#10b981' }]} />
+              <Text style={[styles.statusCountLabel, { color: colors.text }]}>Painted</Text>
+              <TextInput
+                style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+                value={paintedCount}
+                onChangeText={setPaintedCount}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={colors.textSecondary}
+              />
+            </View>
           </View>
         </View>
 
@@ -561,6 +625,38 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  helperText: {
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  statusCountsContainer: {
+    gap: 10,
+    backgroundColor: 'transparent',
+  },
+  statusCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  statusCountLabel: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  statusCountInput: {
+    width: 60,
+    padding: 10,
+    borderRadius: 8,
+    fontSize: 16,
+    textAlign: 'center',
+    borderWidth: 1,
   },
   createCollectionBtn: {
     flexDirection: 'row',

@@ -1,43 +1,90 @@
-import { StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
-import { Text, View } from '@/components/Themed';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput, View } from 'react-native';
+import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useMemo } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
-import { useItemStats, useRecentItems } from '@/hooks/useItems';
+import { useItemStats, useRecentItems, useItems } from '@/hooks/useItems';
 import { useCollections } from '@/hooks/useCollections';
-import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus } from '@/types/database';
+import { useProfile } from '@/hooks/useProfile';
+import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus, getEffectiveStatus } from '@/types/database';
+
+type FilterStatus = 'all' | 'nib' | 'assembled' | 'primed' | 'painted';
 
 export default function HomeScreen() {
-  const { isDarkMode, toggleTheme } = useTheme();
+  const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
+  const hasBackground = !!backgroundImageUrl;
 
   const { user } = useAuth();
+  const { profile } = useProfile(user?.id);
   const { stats, loading: statsLoading, refresh: refreshStats } = useItemStats(user?.id);
   const { items: recentItems, loading: itemsLoading, refresh: refreshItems } = useRecentItems(user?.id, 10);
+  const { items: allItems, loading: allItemsLoading, refresh: refreshAllItems } = useItems(user?.id);
   const { collections, loading: collectionsLoading, refresh: refreshCollections } = useCollections(user?.id);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Search and filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
+  const isSearching = searchQuery.length > 0 || statusFilter !== 'all';
+
+  // Filter items based on search query and status filter
+  const filteredItems = useMemo(() => {
+    if (!isSearching) return [];
+
+    return allItems.filter(item => {
+      // Search filter
+      const matchesSearch = searchQuery.length === 0 ||
+        item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (item.faction && item.faction.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      // Status filter - check count fields instead of status field
+      let matchesStatus = true;
+      if (statusFilter !== 'all') {
+        switch (statusFilter) {
+          case 'nib':
+            matchesStatus = (item.nib_count || 0) > 0;
+            break;
+          case 'assembled':
+            matchesStatus = (item.assembled_count || 0) > 0;
+            break;
+          case 'primed':
+            matchesStatus = (item.primed_count || 0) > 0;
+            break;
+          case 'painted':
+            matchesStatus = (item.painted_count || 0) > 0;
+            break;
+        }
+      }
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [allItems, searchQuery, statusFilter, isSearching]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refreshStats(), refreshItems(), refreshCollections()]);
+    await Promise.all([refreshStats(), refreshItems(), refreshAllItems(), refreshCollections()]);
     setRefreshing(false);
-  }, [refreshStats, refreshItems, refreshCollections]);
+  }, [refreshStats, refreshItems, refreshAllItems, refreshCollections]);
 
-  // Find items that need painting (shame pile + in progress)
-  const unpaintedItems = recentItems.filter(i => i.status === 'nib' || i.status === 'assembled' || i.status === 'primed');
+  // Find items that need painting (have any models not yet painted)
+  const unpaintedItems = recentItems.filter(i => {
+    const effectiveStatus = getEffectiveStatus(i);
+    return effectiveStatus === 'nib' || effectiveStatus === 'wip';
+  });
   const nextUp = unpaintedItems[0];
 
   // Calculate paint progress percentage
   const paintProgress = stats.total > 0
-    ? Math.round((stats.battleReady / stats.total) * 100)
+    ? Math.round((stats.paintedTotal / stats.total) * 100)
     : 0;
 
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
+      style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}
       showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl
@@ -52,7 +99,7 @@ export default function HomeScreen() {
         <View style={styles.headerLeft}>
           <Text style={[styles.appName, { color: colors.text }]}>TabletopVault</Text>
           <Text style={[styles.greeting, { color: colors.textSecondary }]}>
-            Welcome back{user?.email ? `, ${user.email.split('@')[0]}` : ''}
+            Welcome back{profile?.username ? `, ${profile.username}` : ''}
           </Text>
         </View>
         <Pressable
@@ -67,17 +114,152 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
-      {/* Hero Shame Pile */}
-      <View style={[styles.heroSection, { backgroundColor: colors.card }]}>
-        <View style={styles.heroIconContainer}>
-          <FontAwesome name="paint-brush" size={24} color="#ef4444" />
+      {/* Search Bar */}
+      <View style={styles.searchSection}>
+        <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <FontAwesome name="search" size={16} color={colors.textSecondary} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Search items..."
+            placeholderTextColor={colors.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <Pressable onPress={() => setSearchQuery('')}>
+              <FontAwesome name="times-circle" size={16} color={colors.textSecondary} />
+            </Pressable>
+          )}
         </View>
-        <Text style={[styles.heroNumber, { color: colors.text }]}>
-          {statsLoading ? '—' : stats.shamePile}
-        </Text>
-        <Text style={[styles.heroLabel, { color: colors.textSecondary }]}>
-          models to paint
-        </Text>
+
+        {/* Filter Chips */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterScroll}
+          contentContainerStyle={styles.filterContainer}
+        >
+          {(['all', 'nib', 'assembled', 'primed', 'painted'] as FilterStatus[]).map((status) => (
+            <Pressable
+              key={status}
+              style={[
+                styles.filterChip,
+                { backgroundColor: statusFilter === status ? getFilterColor(status) : colors.card },
+                { borderColor: statusFilter === status ? getFilterColor(status) : colors.border },
+              ]}
+              onPress={() => setStatusFilter(status)}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  { color: statusFilter === status ? '#fff' : colors.textSecondary },
+                ]}
+              >
+                {status === 'all' ? 'All' : status === 'nib' ? 'New in Box' : status.charAt(0).toUpperCase() + status.slice(1)}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Search Results */}
+      {isSearching && (
+        <View style={styles.section}>
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+            SEARCH RESULTS ({filteredItems.length})
+          </Text>
+          {allItemsLoading ? (
+            <ActivityIndicator style={{ marginTop: 20 }} />
+          ) : filteredItems.length === 0 ? (
+            <View style={styles.noResults}>
+              <FontAwesome name="search" size={32} color={colors.border} />
+              <Text style={[styles.noResultsText, { color: colors.textSecondary }]}>
+                No items found
+              </Text>
+            </View>
+          ) : (
+            filteredItems.map((item) => (
+              <Pressable
+                key={item.id}
+                style={[styles.searchResultItem, { backgroundColor: colors.card }]}
+                onPress={() => router.push(`/item/${item.id}`)}
+              >
+                <View
+                  style={[
+                    styles.statusDot,
+                    { backgroundColor: getStatusColor(getEffectiveStatus(item)) }
+                  ]}
+                />
+                <View style={styles.searchResultContent}>
+                  <Text style={[styles.searchResultName, { color: colors.text }]} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text style={[styles.searchResultMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {item.faction || 'No faction'} · {STATUS_LABELS[getEffectiveStatus(item)]}
+                  </Text>
+                </View>
+                <FontAwesome name="chevron-right" size={12} color={colors.textSecondary} />
+              </Pressable>
+            ))
+          )}
+        </View>
+      )}
+
+      {/* Status Breakdown - Only show when not searching */}
+      {!isSearching && (
+        <>
+      {/* Status Breakdown */}
+      <View style={styles.statusGrid}>
+        <View style={styles.statusGridRow}>
+          <View style={[styles.statusCard, { backgroundColor: colors.card }]}>
+            <View style={[styles.statusIconContainer, { backgroundColor: 'rgba(107, 114, 128, 0.15)' }]}>
+              <FontAwesome name="cube" size={18} color="#6b7280" />
+            </View>
+            <Text style={[styles.statusNumber, { color: '#6b7280' }]}>
+              {statsLoading ? '—' : stats.nibTotal}
+            </Text>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              New in Box
+            </Text>
+          </View>
+          <View style={[styles.statusCard, { backgroundColor: colors.card }]}>
+            <View style={[styles.statusIconContainer, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+              <FontAwesome name="wrench" size={18} color="#f59e0b" />
+            </View>
+            <Text style={[styles.statusNumber, { color: '#f59e0b' }]}>
+              {statsLoading ? '—' : stats.assembledTotal}
+            </Text>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              Assembled
+            </Text>
+          </View>
+        </View>
+        <View style={styles.statusGridRow}>
+          <View style={[styles.statusCard, { backgroundColor: colors.card }]}>
+            <View style={[styles.statusIconContainer, { backgroundColor: 'rgba(99, 102, 241, 0.15)' }]}>
+              <FontAwesome name="tint" size={18} color="#6366f1" />
+            </View>
+            <Text style={[styles.statusNumber, { color: '#6366f1' }]}>
+              {statsLoading ? '—' : stats.primedTotal}
+            </Text>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              Primed
+            </Text>
+          </View>
+          <View style={[styles.statusCard, { backgroundColor: colors.card }]}>
+            <View style={[styles.statusIconContainer, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+              <FontAwesome name="paint-brush" size={18} color="#10b981" />
+            </View>
+            <Text style={[styles.statusNumber, { color: '#10b981' }]}>
+              {statsLoading ? '—' : stats.paintedTotal}
+            </Text>
+            <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
+              Painted
+            </Text>
+          </View>
+        </View>
       </View>
 
       {/* Progress Bar */}
@@ -100,13 +282,13 @@ export default function HomeScreen() {
           />
         </View>
         <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-          {stats.battleReady} of {stats.total} models painted
+          {stats.paintedTotal} of {stats.total} models painted
         </Text>
       </View>
 
       {/* Quick Stats Row */}
       <View style={styles.statsRow}>
-        <View style={[styles.statCard, { backgroundColor: '#3b82f6' }]}>
+        <View style={[styles.statCard, { backgroundColor: colors.primary }]}>
           <View style={styles.statCardIcon}>
             <FontAwesome name="cubes" size={20} color="rgba(255,255,255,0.9)" />
           </View>
@@ -117,7 +299,7 @@ export default function HomeScreen() {
             total models
           </Text>
         </View>
-        <View style={[styles.statCard, { backgroundColor: '#8b5cf6' }]}>
+        <View style={[styles.statCard, { backgroundColor: '#0891b2' }]}>
           <View style={styles.statCardIcon}>
             <FontAwesome name="folder" size={20} color="rgba(255,255,255,0.9)" />
           </View>
@@ -146,7 +328,7 @@ export default function HomeScreen() {
                 {nextUp.name}
               </Text>
               <Text style={[styles.nextCardMeta, { color: colors.textSecondary }]}>
-                {nextUp.faction || 'No faction'} · {STATUS_LABELS[nextUp.status] || nextUp.status}
+                {nextUp.faction || 'No faction'} · {STATUS_LABELS[getEffectiveStatus(nextUp)]}
               </Text>
             </View>
             <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
@@ -191,7 +373,7 @@ export default function HomeScreen() {
               <View
                 style={[
                   styles.statusDot,
-                  { backgroundColor: getStatusColor(item.status) }
+                  { backgroundColor: getStatusColor(getEffectiveStatus(item)) }
                 ]}
               />
               <Text style={[styles.recentItemName, { color: colors.text }]} numberOfLines={1}>
@@ -214,8 +396,24 @@ export default function HomeScreen() {
           </Text>
         </View>
       )}
+        </>
+      )}
+
+      {/* Bottom spacing */}
+      <View style={{ height: 100 }} />
     </ScrollView>
   );
+}
+
+function getFilterColor(status: FilterStatus): string {
+  switch (status) {
+    case 'all': return '#991b1b';      // Crimson - primary accent
+    case 'painted': return '#10b981';
+    case 'primed': return '#6366f1';
+    case 'assembled': return '#f59e0b';
+    case 'nib': return '#6b7280';
+    default: return '#991b1b';
+  }
 }
 
 function getStatusColor(status: string): string {
@@ -224,6 +422,7 @@ function getStatusColor(status: string): string {
     case 'based': return '#8b5cf6';
     case 'primed': return '#6366f1';
     case 'assembled': return '#f59e0b';
+    case 'wip': return '#f59e0b';
     case 'nib': return '#ef4444';
     default: return '#9ca3af';
   }
@@ -260,33 +459,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroSection: {
-    alignItems: 'center',
-    marginHorizontal: 24,
+  statusGrid: {
+    paddingHorizontal: 24,
     marginTop: 20,
-    paddingVertical: 24,
+    gap: 12,
+    backgroundColor: 'transparent',
+  },
+  statusGridRow: {
+    flexDirection: 'row',
+    gap: 12,
+    backgroundColor: 'transparent',
+  },
+  statusCard: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 16,
     borderRadius: 16,
   },
-  heroIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+  statusIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
-  heroNumber: {
-    fontSize: 72,
+  statusNumber: {
+    fontSize: 32,
     fontWeight: '700',
-    letterSpacing: -2,
+    letterSpacing: -1,
   },
-  heroLabel: {
-    fontSize: 14,
+  statusLabel: {
+    fontSize: 11,
     fontWeight: '500',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
-    marginTop: 4,
+    marginTop: 2,
   },
   progressSection: {
     marginHorizontal: 24,
@@ -451,5 +659,68 @@ const styles = StyleSheet.create({
   emptySubtext: {
     fontSize: 14,
     marginTop: 4,
+  },
+  searchSection: {
+    paddingHorizontal: 24,
+    marginTop: 16,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    height: '100%',
+  },
+  filterScroll: {
+    marginTop: 12,
+    marginHorizontal: -24,
+  },
+  filterContainer: {
+    paddingHorizontal: 24,
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  searchResultContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  searchResultName: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  searchResultMeta: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  noResults: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  noResultsText: {
+    fontSize: 15,
+    marginTop: 12,
   },
 });

@@ -31,6 +31,9 @@ yarn-error.*
 *.pem
 
 # local env files
+# SECURITY: Never commit environment files with secrets
+.env
+.env.local
 .env*.local
 
 # typescript

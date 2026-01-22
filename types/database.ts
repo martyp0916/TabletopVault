@@ -1,11 +1,12 @@
 export type GameSystem = 'wh40k' | 'aos' | 'legion' | 'other';
-export type ItemStatus = 'nib' | 'assembled' | 'primed' | 'painted' | 'based';
+export type ItemStatus = 'nib' | 'assembled' | 'primed' | 'painted' | 'based' | 'wip';
 
 export interface User {
   id: string;
   email: string;
   username: string;
   avatar_url: string | null;
+  background_image_url: string | null;
   is_premium: boolean;
   created_at: string;
   updated_at: string;
@@ -31,6 +32,11 @@ export interface Item {
   faction: string | null;
   quantity: number;
   status: ItemStatus;
+  nib_count: number;
+  assembled_count: number;
+  primed_count: number;
+  based_count: number;
+  painted_count: number;
   purchase_price: number | null;
   current_value: number | null;
   purchase_date: string | null;
@@ -61,13 +67,14 @@ export const STATUS_LABELS: Record<ItemStatus, string> = {
   primed: 'Primed',
   painted: 'Battle Ready',
   based: 'Parade Ready',
+  wip: 'Work in Progress',
 };
 
 export const GAME_COLORS: Record<GameSystem, string> = {
-  wh40k: '#3b82f6',
-  aos: '#f59e0b',
-  legion: '#ef4444',
-  other: '#6b7280',
+  wh40k: '#991b1b',    // Crimson - matches primary accent
+  aos: '#7c3aed',      // Purple - Sigmar's celestial theme
+  legion: '#dc2626',   // Brighter red - Star Wars imperial
+  other: '#525252',    // Neutral gray
 };
 
 export const STATUS_COLORS: Record<ItemStatus, string> = {
@@ -76,4 +83,36 @@ export const STATUS_COLORS: Record<ItemStatus, string> = {
   primed: '#6366f1',
   painted: '#10b981',
   based: '#8b5cf6',
+  wip: '#f59e0b',
 };
+
+// Helper function to get the effective status based on model counts
+// - "Battle Ready" (painted) = ALL models are painted
+// - "Shame Pile" (nib) = ALL models are new in box
+// - "Work in Progress" (wip) = models are in various stages
+export function getEffectiveStatus(item: Item): ItemStatus {
+  const nibCount = item.nib_count || 0;
+  const assembledCount = item.assembled_count || 0;
+  const primedCount = item.primed_count || 0;
+  const paintedCount = item.painted_count || 0;
+
+  const total = nibCount + assembledCount + primedCount + paintedCount;
+
+  // If no counts, fallback to the stored status
+  if (total === 0) {
+    return item.status;
+  }
+
+  // If all models are painted, show as "Battle Ready"
+  if (paintedCount === total) {
+    return 'painted';
+  }
+
+  // If all models are new in box, show as "Shame Pile"
+  if (nibCount === total) {
+    return 'nib';
+  }
+
+  // Otherwise, models are in various stages - "Work in Progress"
+  return 'wip';
+}
