@@ -11,10 +11,17 @@
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#111827"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tabletopvault.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "TabletopVault needs camera access to take photos of your miniatures.",
+        "NSPhotoLibraryUsageDescription": "TabletopVault needs photo library access to select images for your collection.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +29,10 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -30,10 +40,24 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TabletopVault needs photo library access to select images for your collection.",
+          "cameraPermission": "TabletopVault needs camera access to take photos of your miniatures."
+        }
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "07c1e277-32dd-445c-a320-0487f9f6e3c5"
+      }
     }
   }
 }

@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Image, RefreshControl } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, Image, RefreshControl, Dimensions } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -6,51 +6,105 @@ import Colors from '@/constants/Colors';
 import { useState, useEffect, useCallback } from 'react';
 import { useItem } from '@/hooks/useItems';
 import { useTheme } from '@/lib/theme';
+import { useAuth } from '@/lib/auth';
+import { usePaintQueue } from '@/hooks/usePaintQueue';
 import { supabase } from '@/lib/supabase';
 import { GAME_COLORS, STATUS_LABELS, GAME_SYSTEM_LABELS, GameSystem, ItemStatus, getEffectiveStatus } from '@/types/database';
+
+const { width: screenWidth } = Dimensions.get('window');
+
+interface ItemImage {
+  id: string;
+  image_url: string;
+  is_primary: boolean;
+  signedUrl?: string;
+}
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams();
   const { isDarkMode, toggleTheme } = useTheme();
+  const { user } = useAuth();
   const [deleting, setDeleting] = useState(false);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [addingToQueue, setAddingToQueue] = useState(false);
+  const [photos, setPhotos] = useState<ItemImage[]>([]);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const [loadingPhotos, setLoadingPhotos] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { item, loading, error, refresh: refreshItem } = useItem(id as string);
+  const { addToQueue, isInQueue, refresh: refreshQueue } = usePaintQueue(user?.id);
 
-  // Fetch item image
-  const fetchImage = useCallback(async () => {
+  // Fetch all item photos
+  const fetchPhotos = useCallback(async () => {
     if (!id) return;
+    setLoadingPhotos(true);
+    console.log('[ItemDetail] Fetching photos for item:', id);
 
-    const { data: images } = await supabase
+    const { data: images, error } = await supabase
       .from('item_images')
-      .select('image_url')
+      .select('*')
       .eq('item_id', id)
-      .eq('is_primary', true)
-      .limit(1);
+      .order('is_primary', { ascending: false });
 
-    if (images && images.length > 0) {
-      // Create signed URL for private bucket
-      const { data: signedUrlData } = await supabase.storage
-        .from('item-images')
-        .createSignedUrl(images[0].image_url, 3600); // 1 hour expiry
-
-      if (signedUrlData?.signedUrl) {
-        setImageUrl(signedUrlData.signedUrl);
-      }
+    if (error) {
+      console.error('[ItemDetail] Error fetching photos:', error);
+      setLoadingPhotos(false);
+      return;
     }
+
+    console.log('[ItemDetail] Found images in database:', images?.length || 0);
+
+    // Get signed URLs for all images
+    const photosWithUrls = await Promise.all(
+      (images || []).map(async (img) => {
+        console.log('[ItemDetail] Getting signed URL for:', img.image_url);
+        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+          .from('item-images')
+          .createSignedUrl(img.image_url, 3600);
+
+        if (signedUrlError) {
+          console.error('[ItemDetail] Signed URL error:', signedUrlError);
+        }
+
+        return {
+          ...img,
+          signedUrl: signedUrlData?.signedUrl || null,
+        };
+      })
+    );
+
+    // Filter out photos with no signed URL
+    const validPhotos = photosWithUrls.filter(p => p.signedUrl);
+    console.log('[ItemDetail] Valid photos with URLs:', validPhotos.length);
+
+    setPhotos(validPhotos);
+    setLoadingPhotos(false);
   }, [id]);
 
   useEffect(() => {
-    fetchImage();
-  }, [fetchImage]);
+    fetchPhotos();
+  }, [fetchPhotos]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refreshItem(), fetchImage()]);
+    await Promise.all([refreshItem(), fetchPhotos(), refreshQueue()]);
     setRefreshing(false);
-  }, [refreshItem, fetchImage]);
+  }, [refreshItem, fetchPhotos, refreshQueue]);
+
+  const handleAddToQueue = async () => {
+    if (!id) return;
+
+    setAddingToQueue(true);
+    const { error } = await addToQueue(id as string);
+    setAddingToQueue(false);
+
+    if (error) {
+      Alert.alert('Error', error.message);
+    } else {
+      Alert.alert('Added to Queue', 'Item added to your paint queue!');
+    }
+  };
 
   const handleDelete = () => {
     Alert.alert(
@@ -142,17 +196,90 @@ export default function ItemDetailScreen() {
           />
         }
       >
-        {/* Photo Section */}
+        {/* Photo Gallery */}
         <View style={[styles.photoSection, { backgroundColor: colors.card }]}>
-          {imageUrl ? (
-            <Image source={{ uri: imageUrl }} style={styles.itemImage} resizeMode="cover" />
+          {loadingPhotos ? (
+            <ActivityIndicator size="large" color={colors.textSecondary} />
+          ) : photos.length > 0 ? (
+            <>
+              {/* Main Photo */}
+              <Image
+                source={{ uri: photos[activePhotoIndex]?.signedUrl }}
+                style={styles.mainPhoto}
+                resizeMode="cover"
+              />
+
+              {/* Photo Indicators */}
+              {photos.length > 1 && (
+                <View style={styles.photoIndicators}>
+                  {photos.map((_, index) => (
+                    <Pressable
+                      key={index}
+                      onPress={() => setActivePhotoIndex(index)}
+                      style={[
+                        styles.photoIndicator,
+                        {
+                          backgroundColor: index === activePhotoIndex ? '#991b1b' : colors.border,
+                        },
+                      ]}
+                    />
+                  ))}
+                </View>
+              )}
+
+              {/* Thumbnail Strip */}
+              {photos.length > 1 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.thumbnailStrip}
+                >
+                  {photos.map((photo, index) => (
+                    <Pressable
+                      key={photo.id}
+                      onPress={() => setActivePhotoIndex(index)}
+                      style={[
+                        styles.thumbnailWrapper,
+                        index === activePhotoIndex && styles.thumbnailActive,
+                      ]}
+                    >
+                      <Image
+                        source={{ uri: photo.signedUrl }}
+                        style={styles.thumbnail}
+                        resizeMode="cover"
+                      />
+                      {photo.is_primary && (
+                        <View style={styles.primaryBadge}>
+                          <FontAwesome name="star" size={8} color="#fff" />
+                        </View>
+                      )}
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
+            </>
           ) : (
             <>
               <FontAwesome name="image" size={48} color={colors.textSecondary} />
-              <Text style={[styles.photoText, { color: colors.textSecondary }]}>No photo yet</Text>
+              <Text style={[styles.photoText, { color: colors.textSecondary }]}>No photos yet</Text>
+              <Pressable
+                style={[styles.addPhotoLink]}
+                onPress={() => router.push(`/item/edit/${id}`)}
+              >
+                <Text style={[styles.addPhotoLinkText, { color: '#991b1b' }]}>
+                  Add photos in Edit
+                </Text>
+              </Pressable>
             </>
           )}
         </View>
+
+        {/* Photo Count */}
+        {photos.length > 0 && (
+          <Text style={[styles.photoCount, { color: colors.textSecondary }]}>
+            {photos.length} photo{photos.length !== 1 ? 's' : ''}
+          </Text>
+        )}
 
         {/* Title Section */}
         <View style={styles.titleSection}>
@@ -175,8 +302,45 @@ export default function ItemDetailScreen() {
         {/* Quantity */}
         <View style={[styles.quantityCard, { backgroundColor: colors.card }]}>
           <Text style={[styles.quantityValue, { color: colors.text }]}>{item.quantity}</Text>
-          <Text style={[styles.quantityLabel, { color: colors.textSecondary }]}>Quantity</Text>
+          <Text style={[styles.quantityLabel, { color: colors.textSecondary }]}>Models</Text>
         </View>
+
+        {/* Status Breakdown */}
+        {(item.nib_count > 0 || item.assembled_count > 0 || item.primed_count > 0 || item.painted_count > 0) && (
+          <View style={styles.statusBreakdown}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>STATUS BREAKDOWN</Text>
+            <View style={[styles.statusGrid, { backgroundColor: colors.card }]}>
+              {item.nib_count > 0 && (
+                <View style={styles.statusItem}>
+                  <View style={[styles.statusDot, { backgroundColor: '#6b7280' }]} />
+                  <Text style={[styles.statusItemLabel, { color: colors.text }]}>New in Box</Text>
+                  <Text style={[styles.statusItemValue, { color: colors.text }]}>{item.nib_count}</Text>
+                </View>
+              )}
+              {item.assembled_count > 0 && (
+                <View style={styles.statusItem}>
+                  <View style={[styles.statusDot, { backgroundColor: '#f59e0b' }]} />
+                  <Text style={[styles.statusItemLabel, { color: colors.text }]}>Assembled</Text>
+                  <Text style={[styles.statusItemValue, { color: colors.text }]}>{item.assembled_count}</Text>
+                </View>
+              )}
+              {item.primed_count > 0 && (
+                <View style={styles.statusItem}>
+                  <View style={[styles.statusDot, { backgroundColor: '#6366f1' }]} />
+                  <Text style={[styles.statusItemLabel, { color: colors.text }]}>Primed</Text>
+                  <Text style={[styles.statusItemValue, { color: colors.text }]}>{item.primed_count}</Text>
+                </View>
+              )}
+              {item.painted_count > 0 && (
+                <View style={styles.statusItem}>
+                  <View style={[styles.statusDot, { backgroundColor: '#10b981' }]} />
+                  <Text style={[styles.statusItemLabel, { color: colors.text }]}>Painted</Text>
+                  <Text style={[styles.statusItemValue, { color: colors.text }]}>{item.painted_count}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
 
         {/* Details List */}
         <View style={styles.detailsSection}>
@@ -222,6 +386,35 @@ export default function ItemDetailScreen() {
           </View>
         )}
 
+        {/* Add to Queue Button */}
+        {effectiveStatus !== 'painted' && !isInQueue(id as string) && (
+          <View style={styles.queueSection}>
+            <Pressable
+              style={[styles.queueButton, { backgroundColor: colors.card, borderColor: '#7c3aed' }]}
+              onPress={handleAddToQueue}
+              disabled={addingToQueue}
+            >
+              {addingToQueue ? (
+                <ActivityIndicator color="#7c3aed" />
+              ) : (
+                <>
+                  <FontAwesome name="paint-brush" size={16} color="#7c3aed" />
+                  <Text style={[styles.queueButtonText, { color: '#7c3aed' }]}>Add to Paint Queue</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        )}
+
+        {isInQueue(id as string) && (
+          <View style={styles.queueSection}>
+            <View style={[styles.inQueueBadge, { backgroundColor: '#7c3aed20' }]}>
+              <FontAwesome name="check" size={14} color="#7c3aed" />
+              <Text style={[styles.inQueueText, { color: '#7c3aed' }]}>In Paint Queue</Text>
+            </View>
+          </View>
+        )}
+
         {/* Actions */}
         <View style={styles.actionsSection}>
           <Pressable
@@ -246,6 +439,8 @@ export default function ItemDetailScreen() {
             )}
           </Pressable>
         </View>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
     </View>
   );
@@ -288,9 +483,55 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   photoSection: {
-    height: 200,
+    minHeight: 200,
     margin: 20,
     borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  mainPhoto: {
+    width: '100%',
+    height: 250,
+  },
+  photoIndicators: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+  },
+  photoIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  thumbnailStrip: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    gap: 8,
+  },
+  thumbnailWrapper: {
+    position: 'relative',
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  thumbnailActive: {
+    borderColor: '#991b1b',
+  },
+  thumbnail: {
+    width: 50,
+    height: 50,
+  },
+  primaryBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: '#991b1b',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -298,10 +539,19 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
   },
-  itemImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 16,
+  addPhotoLink: {
+    marginTop: 8,
+    padding: 8,
+  },
+  addPhotoLinkText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  photoCount: {
+    textAlign: 'center',
+    fontSize: 12,
+    marginTop: -12,
+    marginBottom: 8,
   },
   titleSection: {
     paddingHorizontal: 20,
@@ -350,6 +600,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
+  statusBreakdown: {
+    paddingHorizontal: 20,
+    marginTop: 24,
+    backgroundColor: 'transparent',
+  },
+  statusGrid: {
+    borderRadius: 12,
+    padding: 16,
+    gap: 12,
+  },
+  statusItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 10,
+  },
+  statusItemLabel: {
+    flex: 1,
+    fontSize: 14,
+  },
+  statusItemValue: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   detailsSection: {
     paddingHorizontal: 20,
     marginTop: 28,
@@ -384,10 +663,41 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
+  queueSection: {
+    paddingHorizontal: 20,
+    marginTop: 24,
+  },
+  queueButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8,
+  },
+  queueButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  inQueueBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+    alignSelf: 'center',
+  },
+  inQueueText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   actionsSection: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    marginTop: 32,
+    marginTop: 24,
     gap: 12,
     backgroundColor: 'transparent',
   },

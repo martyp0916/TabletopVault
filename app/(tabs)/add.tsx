@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform, KeyboardAvoidingView } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -239,15 +239,21 @@ export default function AddScreen() {
   };
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
+      <ScrollView
+        style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <View style={styles.headerTitleArea}>
+          <View style={[styles.headerTitleArea, hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }]}>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Add New</Text>
             <Text style={[styles.title, { color: colors.text }]}>Item</Text>
           </View>
@@ -288,7 +294,7 @@ export default function AddScreen() {
       )}
 
       {/* Form Fields */}
-      <View style={styles.form}>
+      <View style={[styles.form, hasBackground && { backgroundColor: colors.card, marginHorizontal: 24, borderRadius: 12, marginTop: 16 }]}>
         {/* Collection Picker */}
         <View style={styles.fieldGroup}>
           <Text style={[styles.label, { color: colors.text }]}>Collection *</Text>
@@ -499,6 +505,7 @@ export default function AddScreen() {
         </Pressable>
       </View>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -517,9 +524,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollContent: {
+    paddingBottom: 100,
+  },
   header: {
     padding: 24,
-    paddingTop: 16,
+    paddingTop: 60,
     backgroundColor: 'transparent',
   },
   headerTop: {

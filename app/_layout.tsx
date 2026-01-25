@@ -3,6 +3,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Linking from 'expo-linking';
 import { useEffect } from 'react';
 import { ImageBackground, StyleSheet, View } from 'react-native';
 import 'react-native-reanimated';
@@ -11,6 +12,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { ThemeProvider as AppThemeProvider, useTheme } from '@/lib/theme';
 import { useProfile } from '@/hooks/useProfile';
+import { supabase } from '@/lib/supabase';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -76,6 +78,54 @@ function RootLayoutNav() {
 
   console.log('[Layout] backgroundImageUrl:', backgroundImageUrl ? 'SET' : 'NULL');
 
+  // Handle deep links for password reset
+  useEffect(() => {
+    const handleDeepLink = async (event: { url: string }) => {
+      const url = event.url;
+      console.log('[Layout] Deep link received:', url);
+
+      // Check if this is a password reset link
+      if (url.includes('reset-password') || url.includes('type=recovery')) {
+        // Parse the URL to extract tokens from hash fragment
+        // Supabase sends: tabletopvault://reset-password#access_token=...&refresh_token=...&type=recovery
+        const hashIndex = url.indexOf('#');
+        if (hashIndex !== -1) {
+          const hashParams = new URLSearchParams(url.substring(hashIndex + 1));
+          const accessToken = hashParams.get('access_token');
+          const refreshToken = hashParams.get('refresh_token');
+          const type = hashParams.get('type');
+
+          if (type === 'recovery' && accessToken && refreshToken) {
+            // Set the session with the tokens
+            const { error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+
+            if (!error) {
+              // Navigate to reset password screen
+              router.replace('/(auth)/reset-password');
+            }
+          }
+        }
+      }
+    };
+
+    // Handle URL when app is opened from deep link
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink({ url });
+      }
+    });
+
+    // Listen for deep links while app is open
+    const subscription = Linking.addEventListener('url', handleDeepLink);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [router]);
+
   useEffect(() => {
     if (loading) return;
 
@@ -85,8 +135,12 @@ function RootLayoutNav() {
       // Redirect to login if not authenticated
       router.replace('/(auth)/login');
     } else if (user && inAuthGroup) {
-      // Redirect to home if authenticated
-      router.replace('/(tabs)');
+      // Don't redirect if we're on the reset-password screen
+      const currentScreen = segments[1];
+      if (currentScreen !== 'reset-password') {
+        // Redirect to home if authenticated
+        router.replace('/(tabs)');
+      }
     }
   }, [user, loading, segments]);
 
@@ -100,6 +154,7 @@ function RootLayoutNav() {
           source={{ uri: backgroundImageUrl }}
           style={styles.backgroundImage}
           resizeMode="cover"
+          imageStyle={{ top: 0 }}
           onError={(e) => console.log('Background image failed to load:', e.nativeEvent.error)}
         >
           <View style={[styles.overlay, { backgroundColor: isDarkMode ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.2)' }]}>
@@ -110,6 +165,7 @@ function RootLayoutNav() {
                 <Stack.Screen name="collection" options={{ headerShown: false }} />
                 <Stack.Screen name="item" options={{ headerShown: false }} />
                 <Stack.Screen name="profile" options={{ headerShown: false }} />
+                <Stack.Screen name="user" options={{ headerShown: false }} />
                 <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
               </Stack>
             </ThemeProvider>
@@ -128,6 +184,7 @@ function RootLayoutNav() {
         <Stack.Screen name="collection" options={{ headerShown: false }} />
         <Stack.Screen name="item" options={{ headerShown: false }} />
         <Stack.Screen name="profile" options={{ headerShown: false }} />
+        <Stack.Screen name="user" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
       </Stack>
     </ThemeProvider>

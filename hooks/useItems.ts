@@ -17,8 +17,6 @@ import {
   validateItemFaction,
   validateItemNotes,
   validateItemQuantity,
-  validatePrice,
-  validateDate,
   validateGameSystem,
   validateItemStatus,
   sanitizeString,
@@ -31,13 +29,13 @@ import { rateLimiter, getRateLimitKey } from '@/lib/rateLimiter';
 const ALLOWED_CREATE_FIELDS = [
   'collection_id', 'name', 'game_system', 'faction', 'quantity', 'status',
   'nib_count', 'assembled_count', 'primed_count', 'painted_count', 'based_count',
-  'purchase_price', 'current_value', 'purchase_date', 'notes'
+  'notes'
 ];
 
 const ALLOWED_UPDATE_FIELDS = [
   'name', 'game_system', 'faction', 'quantity', 'status',
   'nib_count', 'assembled_count', 'primed_count', 'painted_count', 'based_count',
-  'purchase_price', 'current_value', 'purchase_date', 'notes'
+  'notes'
 ];
 
 /**
@@ -113,32 +111,6 @@ function validateItemData(
       return { isValid: false, error: validation.errors[0], sanitized: {} };
     }
     sanitized.status = validation.sanitizedValue;
-  }
-
-  // Validate price fields
-  if ('purchase_price' in data) {
-    const validation = validatePrice(data.purchase_price, 'Purchase price');
-    if (!validation.isValid) {
-      return { isValid: false, error: validation.errors[0], sanitized: {} };
-    }
-    sanitized.purchase_price = validation.sanitizedValue;
-  }
-
-  if ('current_value' in data) {
-    const validation = validatePrice(data.current_value, 'Current value');
-    if (!validation.isValid) {
-      return { isValid: false, error: validation.errors[0], sanitized: {} };
-    }
-    sanitized.current_value = validation.sanitizedValue;
-  }
-
-  // Validate date
-  if ('purchase_date' in data) {
-    const validation = validateDate(data.purchase_date);
-    if (!validation.isValid) {
-      return { isValid: false, error: validation.errors[0], sanitized: {} };
-    }
-    sanitized.purchase_date = validation.sanitizedValue;
   }
 
   // Validate notes
@@ -226,9 +198,6 @@ export function useItems(userId: string | undefined, collectionId?: string) {
     primed_count?: number;
     painted_count?: number;
     based_count?: number;
-    purchase_price?: number;
-    current_value?: number;
-    purchase_date?: string;
     notes?: string;
   }) => {
     if (!userId) return { error: new Error('Not authenticated') };

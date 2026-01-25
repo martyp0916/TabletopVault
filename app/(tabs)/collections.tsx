@@ -277,7 +277,7 @@ export default function CollectionsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <View style={styles.headerTitleArea}>
+          <View style={[styles.headerTitleArea, hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }]}>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Organize Your</Text>
             <Text style={[styles.title, { color: colors.text }]}>Collections</Text>
           </View>
@@ -296,7 +296,7 @@ export default function CollectionsScreen() {
 
       {/* Add New Collection Button */}
       <Pressable
-        style={[styles.addButton, { borderColor: colors.border }]}
+        style={[styles.addButton, { borderColor: colors.border, backgroundColor: hasBackground ? colors.card : 'transparent' }]}
         onPress={() => setShowModal(true)}
       >
         <FontAwesome name="plus" size={20} color={colors.textSecondary} />
@@ -309,7 +309,7 @@ export default function CollectionsScreen() {
       {loading ? (
         <ActivityIndicator style={{ marginTop: 40 }} />
       ) : collections.length === 0 ? (
-        <View style={styles.emptyState}>
+        <View style={[styles.emptyState, hasBackground && { backgroundColor: colors.card, marginHorizontal: 24, borderRadius: 12, paddingVertical: 40 }]}>
           <FontAwesome name="folder-open-o" size={48} color={colors.textSecondary} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>No collections yet</Text>
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
@@ -488,7 +488,7 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 24,
-    paddingTop: 16,
+    paddingTop: 60,
     backgroundColor: 'transparent',
   },
   headerTop: {

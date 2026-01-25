@@ -9,7 +9,10 @@ import { useTheme } from '@/lib/theme';
 import { useCollection, useCollections } from '@/hooks/useCollections';
 import { useItems } from '@/hooks/useItems';
 import { supabase } from '@/lib/supabase';
-import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus, getEffectiveStatus } from '@/types/database';
+import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus, getEffectiveStatus, Item } from '@/types/database';
+
+// Map of item IDs to their primary photo URLs
+type ItemPhotoMap = Record<string, string>;
 
 export default function CollectionDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -23,6 +26,7 @@ export default function CollectionDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
+  const [itemPhotos, setItemPhotos] = useState<ItemPhotoMap>({});
 
   const loading = collectionLoading || itemsLoading;
 
@@ -43,6 +47,41 @@ export default function CollectionDetailScreen() {
   useEffect(() => {
     fetchCoverImage();
   }, [fetchCoverImage]);
+
+  // Fetch primary photos for all items
+  const fetchItemPhotos = useCallback(async () => {
+    if (items.length === 0) return;
+
+    const itemIds = items.map(item => item.id);
+
+    // Get primary images for all items in this collection
+    const { data: images, error } = await supabase
+      .from('item_images')
+      .select('item_id, image_url')
+      .in('item_id', itemIds)
+      .eq('is_primary', true);
+
+    if (error || !images) return;
+
+    // Get signed URLs for all images
+    const photoMap: ItemPhotoMap = {};
+    await Promise.all(
+      images.map(async (img) => {
+        const { data: signedUrlData } = await supabase.storage
+          .from('item-images')
+          .createSignedUrl(img.image_url, 3600);
+        if (signedUrlData?.signedUrl) {
+          photoMap[img.item_id] = signedUrlData.signedUrl;
+        }
+      })
+    );
+
+    setItemPhotos(photoMap);
+  }, [items]);
+
+  useEffect(() => {
+    fetchItemPhotos();
+  }, [fetchItemPhotos]);
 
   const handleDeleteCollection = () => {
     Alert.alert(
@@ -71,6 +110,7 @@ export default function CollectionDetailScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([refreshCollection(), refreshItems(), fetchCoverImage()]);
+    // Item photos will refresh via useEffect when items change
     setRefreshing(false);
   }, [refreshCollection, refreshItems, fetchCoverImage]);
 
@@ -208,6 +248,18 @@ export default function CollectionDetailScreen() {
                 ]}
                 onPress={() => router.push(`/item/${item.id}`)}
               >
+                {/* Item Photo */}
+                {itemPhotos[item.id] ? (
+                  <Image
+                    source={{ uri: itemPhotos[item.id] }}
+                    style={styles.itemPhoto}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[styles.itemPhotoPlaceholder, { backgroundColor: colors.card }]}>
+                    <FontAwesome name="image" size={16} color={colors.textSecondary} />
+                  </View>
+                )}
                 <View style={[styles.statusDot, { backgroundColor: getStatusColor(getEffectiveStatus(item)) }]} />
                 <View style={styles.itemInfo}>
                   <Text style={[styles.itemName, { color: colors.text }]}>{item.name}</Text>
@@ -379,8 +431,22 @@ const styles = StyleSheet.create({
   itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 12,
     backgroundColor: 'transparent',
+  },
+  itemPhoto: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    marginRight: 12,
+  },
+  itemPhotoPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   statusDot: {
     width: 10,

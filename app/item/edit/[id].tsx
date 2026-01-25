@@ -1,13 +1,22 @@
-import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
 import { useItem, useItems } from '@/hooks/useItems';
 import { ItemStatus } from '@/types/database';
+import { supabase } from '@/lib/supabase';
+import * as ImagePicker from 'expo-image-picker';
+
+interface ItemImage {
+  id: string;
+  image_url: string;
+  is_primary: boolean;
+  signedUrl?: string;
+}
 
 export default function EditItemScreen() {
   const { id } = useLocalSearchParams();
@@ -25,12 +34,70 @@ export default function EditItemScreen() {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Photo state
+  const [photos, setPhotos] = useState<ItemImage[]>([]);
+  const [loadingPhotos, setLoadingPhotos] = useState(true);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
   // Status counts
   const [nibCount, setNibCount] = useState('0');
   const [assembledCount, setAssembledCount] = useState('0');
   const [primedCount, setPrimedCount] = useState('0');
   const [paintedCount, setPaintedCount] = useState('0');
   const [basedCount, setBasedCount] = useState('0');
+
+  // Fetch existing photos
+  const fetchPhotos = useCallback(async () => {
+    if (!id) return;
+    setLoadingPhotos(true);
+    console.log('[Photo] Fetching photos for item:', id);
+
+    const { data: images, error } = await supabase
+      .from('item_images')
+      .select('*')
+      .eq('item_id', id)
+      .order('is_primary', { ascending: false });
+
+    if (error) {
+      console.error('[Photo] Error fetching photos:', error);
+      setLoadingPhotos(false);
+      return;
+    }
+
+    console.log('[Photo] Found images in database:', images?.length || 0);
+
+    // Get signed URLs for all images
+    const photosWithUrls = await Promise.all(
+      (images || []).map(async (img) => {
+        console.log('[Photo] Getting signed URL for:', img.image_url);
+        const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+          .from('item-images')
+          .createSignedUrl(img.image_url, 3600);
+
+        if (signedUrlError) {
+          console.error('[Photo] Signed URL error:', signedUrlError);
+        } else {
+          console.log('[Photo] Signed URL success:', signedUrlData?.signedUrl?.substring(0, 50) + '...');
+        }
+
+        return {
+          ...img,
+          signedUrl: signedUrlData?.signedUrl || null,
+        };
+      })
+    );
+
+    // Filter out photos with no signed URL
+    const validPhotos = photosWithUrls.filter(p => p.signedUrl);
+    console.log('[Photo] Valid photos with URLs:', validPhotos.length);
+
+    setPhotos(validPhotos);
+    setLoadingPhotos(false);
+  }, [id]);
+
+  useEffect(() => {
+    fetchPhotos();
+  }, [fetchPhotos]);
 
   // Populate form with existing item data
   useEffect(() => {
@@ -46,6 +113,203 @@ export default function EditItemScreen() {
       setBasedCount(String(item.based_count || 0));
     }
   }, [item]);
+
+  const pickImage = async (useCamera: boolean) => {
+    if (useCamera) {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permission is required to take photos.');
+        return;
+      }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Photo library permission is required to select photos.');
+        return;
+      }
+    }
+
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.8,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.8,
+        });
+
+    if (!result.canceled && result.assets[0]) {
+      await uploadPhoto(result.assets[0].uri);
+    }
+  };
+
+  const showImageOptions = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Take Photo', 'Choose from Library'],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) pickImage(true);
+          if (buttonIndex === 2) pickImage(false);
+        }
+      );
+    } else {
+      Alert.alert('Add Photo', 'Choose an option', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Take Photo', onPress: () => pickImage(true) },
+        { text: 'Choose from Library', onPress: () => pickImage(false) },
+      ]);
+    }
+  };
+
+  const uploadPhoto = async (uri: string) => {
+    if (!user || !id) {
+      console.log('[Photo] Missing user or id:', { user: !!user, id });
+      return;
+    }
+    setUploadingPhoto(true);
+
+    try {
+      console.log('[Photo] Starting upload for URI:', uri.substring(0, 50) + '...');
+
+      const uriWithoutParams = uri.split('?')[0];
+      const fileExt = uriWithoutParams.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${user.id}/${id}/${Date.now()}.${fileExt}`;
+      console.log('[Photo] File name:', fileName);
+
+      const response = await fetch(uri);
+      const arrayBuffer = await response.arrayBuffer();
+      console.log('[Photo] Array buffer size:', arrayBuffer.byteLength);
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('item-images')
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('[Photo] Upload error:', uploadError);
+        Alert.alert('Error', `Failed to upload photo: ${uploadError.message}`);
+        setUploadingPhoto(false);
+        return;
+      }
+      console.log('[Photo] Upload successful:', uploadData);
+
+      // Add to item_images table
+      const isPrimary = photos.length === 0; // First photo is primary
+      console.log('[Photo] Inserting to item_images, isPrimary:', isPrimary);
+
+      const { data: insertData, error: insertError } = await supabase.from('item_images').insert({
+        item_id: id,
+        image_url: fileName,
+        is_primary: isPrimary,
+      }).select();
+
+      if (insertError) {
+        console.error('[Photo] Insert error:', insertError);
+        Alert.alert('Error', `Failed to save photo reference: ${insertError.message}`);
+      } else {
+        console.log('[Photo] Insert successful:', insertData);
+        await fetchPhotos();
+      }
+    } catch (error) {
+      console.error('[Photo] Error uploading photo:', error);
+      Alert.alert('Error', 'Failed to upload photo');
+    }
+
+    setUploadingPhoto(false);
+  };
+
+  const deletePhoto = async (photo: ItemImage) => {
+    Alert.alert(
+      'Delete Photo',
+      'Are you sure you want to delete this photo?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            // Delete from storage
+            await supabase.storage.from('item-images').remove([photo.image_url]);
+
+            // Delete from database
+            await supabase.from('item_images').delete().eq('id', photo.id);
+
+            // If this was primary and there are other photos, make the first one primary
+            if (photo.is_primary && photos.length > 1) {
+              const nextPhoto = photos.find(p => p.id !== photo.id);
+              if (nextPhoto) {
+                await supabase
+                  .from('item_images')
+                  .update({ is_primary: true })
+                  .eq('id', nextPhoto.id);
+              }
+            }
+
+            await fetchPhotos();
+          },
+        },
+      ]
+    );
+  };
+
+  const setPrimaryPhoto = async (photo: ItemImage) => {
+    if (photo.is_primary) return;
+
+    // Remove primary from all photos
+    await supabase
+      .from('item_images')
+      .update({ is_primary: false })
+      .eq('item_id', id);
+
+    // Set this photo as primary
+    await supabase
+      .from('item_images')
+      .update({ is_primary: true })
+      .eq('id', photo.id);
+
+    await fetchPhotos();
+  };
+
+  const showPhotoOptions = (photo: ItemImage) => {
+    const options = photo.is_primary
+      ? ['Cancel', 'Delete Photo']
+      : ['Cancel', 'Set as Primary', 'Delete Photo'];
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          cancelButtonIndex: 0,
+          destructiveButtonIndex: photo.is_primary ? 1 : 2,
+        },
+        (buttonIndex) => {
+          if (photo.is_primary) {
+            if (buttonIndex === 1) deletePhoto(photo);
+          } else {
+            if (buttonIndex === 1) setPrimaryPhoto(photo);
+            if (buttonIndex === 2) deletePhoto(photo);
+          }
+        }
+      );
+    } else {
+      const alertOptions: any[] = [{ text: 'Cancel', style: 'cancel' }];
+      if (!photo.is_primary) {
+        alertOptions.push({ text: 'Set as Primary', onPress: () => setPrimaryPhoto(photo) });
+      }
+      alertOptions.push({ text: 'Delete Photo', style: 'destructive', onPress: () => deletePhoto(photo) });
+      Alert.alert('Photo Options', '', alertOptions);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -131,6 +395,65 @@ export default function EditItemScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Photos Section */}
+        <View style={styles.photosSection}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Photos</Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.photosContainer}
+          >
+            {/* Add Photo Button */}
+            <Pressable
+              style={[styles.addPhotoButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={showImageOptions}
+              disabled={uploadingPhoto}
+            >
+              {uploadingPhoto ? (
+                <ActivityIndicator color={colors.textSecondary} />
+              ) : (
+                <>
+                  <FontAwesome name="plus" size={24} color={colors.textSecondary} />
+                  <Text style={[styles.addPhotoText, { color: colors.textSecondary }]}>Add</Text>
+                </>
+              )}
+            </Pressable>
+
+            {/* Existing Photos */}
+            {loadingPhotos ? (
+              <View style={styles.photoLoadingContainer}>
+                <ActivityIndicator color={colors.textSecondary} />
+              </View>
+            ) : (
+              photos.map((photo) => (
+                <Pressable
+                  key={photo.id}
+                  style={styles.photoWrapper}
+                  onPress={() => showPhotoOptions(photo)}
+                >
+                  <Image
+                    source={{ uri: photo.signedUrl }}
+                    style={styles.photoThumbnail}
+                    resizeMode="cover"
+                  />
+                  {photo.is_primary && (
+                    <View style={styles.primaryBadge}>
+                      <FontAwesome name="star" size={10} color="#fff" />
+                    </View>
+                  )}
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
+
+          {photos.length > 0 && (
+            <Text style={[styles.photoHint, { color: colors.textSecondary }]}>
+              Tap a photo to set as primary or delete
+            </Text>
+          )}
+        </View>
+
         {/* Form Fields */}
         <View style={styles.form}>
           {/* Name */}
@@ -296,9 +619,67 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
   },
+  photosSection: {
+    paddingTop: 20,
+    paddingBottom: 8,
+    backgroundColor: 'transparent',
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 12,
+    paddingHorizontal: 24,
+  },
+  photosContainer: {
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+  addPhotoButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addPhotoText: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  photoLoadingContainer: {
+    width: 80,
+    height: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoWrapper: {
+    position: 'relative',
+  },
+  photoThumbnail: {
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+  },
+  primaryBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#991b1b',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoHint: {
+    fontSize: 12,
+    paddingHorizontal: 24,
+    marginTop: 8,
+  },
   form: {
     padding: 24,
-    paddingTop: 20,
+    paddingTop: 12,
     backgroundColor: 'transparent',
   },
   fieldGroup: {

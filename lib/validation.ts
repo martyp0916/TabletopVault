@@ -45,7 +45,13 @@ export const LIMITS = {
   ITEM_FACTION_MAX_LENGTH: 100,
   ITEM_NOTES_MAX_LENGTH: 2000,
   ITEM_QUANTITY_MAX: 10000,        // Reasonable upper limit
-  ITEM_PRICE_MAX: 1000000,         // $1M max price
+
+  // Social features
+  BIO_MAX_LENGTH: 150,
+  LOCATION_MAX_LENGTH: 100,
+  WEBSITE_URL_MAX_LENGTH: 200,
+  COMMENT_MIN_LENGTH: 1,
+  COMMENT_MAX_LENGTH: 1000,
 
   // General
   MAX_SEARCH_QUERY_LENGTH: 100,
@@ -68,9 +74,6 @@ const PATTERNS = {
 
   // Safe text: no control characters, no null bytes
   SAFE_TEXT: /^[^\x00-\x08\x0B\x0C\x0E-\x1F\x7F]*$/,
-
-  // Date format: YYYY-MM-DD
-  DATE: /^\d{4}-\d{2}-\d{2}$/,
 } as const;
 
 // =============================================================================
@@ -430,68 +433,6 @@ export function validateItemQuantity(quantity: unknown, fieldName: string = 'Qua
 }
 
 /**
- * Validate price/value
- */
-export function validatePrice(price: unknown, fieldName: string = 'Price'): ValidationResult {
-  // Price is optional
-  if (price === null || price === undefined || price === '') {
-    return { isValid: true, errors: [], sanitizedValue: null };
-  }
-
-  const errors: string[] = [];
-
-  const num = sanitizeNumber(price, 0, LIMITS.ITEM_PRICE_MAX);
-
-  if (num === null) {
-    errors.push(`${fieldName} must be a valid number`);
-  } else if (num < 0) {
-    errors.push(`${fieldName} cannot be negative`);
-  } else if (num > LIMITS.ITEM_PRICE_MAX) {
-    errors.push(`${fieldName} cannot exceed $${LIMITS.ITEM_PRICE_MAX.toLocaleString()}`);
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    sanitizedValue: num,
-  };
-}
-
-/**
- * Validate date string (YYYY-MM-DD format)
- */
-export function validateDate(date: unknown): ValidationResult {
-  // Date is optional
-  if (date === null || date === undefined || date === '') {
-    return { isValid: true, errors: [], sanitizedValue: null };
-  }
-
-  const errors: string[] = [];
-
-  if (typeof date !== 'string') {
-    return { isValid: false, errors: ['Date must be a string'] };
-  }
-
-  const sanitized = sanitizeString(date);
-
-  if (!PATTERNS.DATE.test(sanitized)) {
-    errors.push('Date must be in YYYY-MM-DD format');
-  } else {
-    // Verify it's a valid date
-    const parsed = new Date(sanitized);
-    if (isNaN(parsed.getTime())) {
-      errors.push('Invalid date');
-    }
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors,
-    sanitizedValue: sanitized || null,
-  };
-}
-
-/**
  * Validate game system enum
  */
 export function validateGameSystem(system: unknown): ValidationResult {
@@ -561,6 +502,126 @@ export function validateSearchQuery(query: unknown): ValidationResult {
 
   if (sanitized.length > LIMITS.MAX_SEARCH_QUERY_LENGTH) {
     errors.push(`Search query must be less than ${LIMITS.MAX_SEARCH_QUERY_LENGTH} characters`);
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    sanitizedValue: sanitized,
+  };
+}
+
+/**
+ * Validate user bio
+ */
+export function validateBio(bio: unknown): ValidationResult {
+  if (bio === null || bio === undefined || bio === '') {
+    return { isValid: true, errors: [], sanitizedValue: null };
+  }
+
+  const errors: string[] = [];
+
+  if (typeof bio !== 'string') {
+    return { isValid: false, errors: ['Bio must be a string'] };
+  }
+
+  // Allow newlines in bio
+  const sanitized = bio.trim().replace(/\0/g, '');
+
+  if (sanitized.length > LIMITS.BIO_MAX_LENGTH) {
+    errors.push(`Bio must be less than ${LIMITS.BIO_MAX_LENGTH} characters`);
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    sanitizedValue: sanitized || null,
+  };
+}
+
+/**
+ * Validate user location
+ */
+export function validateLocation(location: unknown): ValidationResult {
+  if (location === null || location === undefined || location === '') {
+    return { isValid: true, errors: [], sanitizedValue: null };
+  }
+
+  const errors: string[] = [];
+
+  if (typeof location !== 'string') {
+    return { isValid: false, errors: ['Location must be a string'] };
+  }
+
+  const sanitized = sanitizeString(location);
+
+  if (sanitized.length > LIMITS.LOCATION_MAX_LENGTH) {
+    errors.push(`Location must be less than ${LIMITS.LOCATION_MAX_LENGTH} characters`);
+  } else if (!PATTERNS.SAFE_TEXT.test(sanitized)) {
+    errors.push('Location contains invalid characters');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    sanitizedValue: sanitized || null,
+  };
+}
+
+/**
+ * Validate website URL
+ */
+export function validateWebsiteUrl(url: unknown): ValidationResult {
+  if (url === null || url === undefined || url === '') {
+    return { isValid: true, errors: [], sanitizedValue: null };
+  }
+
+  const errors: string[] = [];
+
+  if (typeof url !== 'string') {
+    return { isValid: false, errors: ['Website URL must be a string'] };
+  }
+
+  const sanitized = sanitizeString(url);
+
+  if (sanitized.length > LIMITS.WEBSITE_URL_MAX_LENGTH) {
+    errors.push(`Website URL must be less than ${LIMITS.WEBSITE_URL_MAX_LENGTH} characters`);
+  } else {
+    // Basic URL validation
+    try {
+      const parsed = new URL(sanitized.startsWith('http') ? sanitized : `https://${sanitized}`);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        errors.push('Website URL must use http or https');
+      }
+    } catch {
+      errors.push('Please enter a valid website URL');
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    sanitizedValue: sanitized || null,
+  };
+}
+
+/**
+ * Validate comment content
+ */
+export function validateComment(content: unknown): ValidationResult {
+  const errors: string[] = [];
+
+  if (typeof content !== 'string') {
+    return { isValid: false, errors: ['Comment must be a string'] };
+  }
+
+  // Allow newlines in comments
+  const sanitized = content.trim().replace(/\0/g, '');
+
+  if (!sanitized || sanitized.length < LIMITS.COMMENT_MIN_LENGTH) {
+    errors.push('Comment cannot be empty');
+  } else if (sanitized.length > LIMITS.COMMENT_MAX_LENGTH) {
+    errors.push(`Comment must be less than ${LIMITS.COMMENT_MAX_LENGTH} characters`);
   }
 
   return {
@@ -674,14 +735,22 @@ export const SCHEMAS = {
     primed_count: { validate: (v: unknown) => validateItemQuantity(v, 'Primed count'), required: false },
     painted_count: { validate: (v: unknown) => validateItemQuantity(v, 'Painted count'), required: false },
     based_count: { validate: (v: unknown) => validateItemQuantity(v, 'Based count'), required: false },
-    purchase_price: { validate: (v: unknown) => validatePrice(v, 'Purchase price'), required: false },
-    current_value: { validate: (v: unknown) => validatePrice(v, 'Current value'), required: false },
-    purchase_date: { validate: validateDate, required: false },
     notes: { validate: validateItemNotes, required: false },
   },
 
   profile: {
     username: { validate: validateUsername, required: false },
     avatar_url: { validate: (v: unknown) => ({ isValid: true, errors: [], sanitizedValue: v }), required: false },
+    background_image_url: { validate: (v: unknown) => ({ isValid: true, errors: [], sanitizedValue: v }), required: false },
+    is_public: { validate: (v: unknown) => ({ isValid: true, errors: [], sanitizedValue: !!v }), required: false },
+    bio: { validate: validateBio, required: false },
+    location: { validate: validateLocation, required: false },
+    website_url: { validate: validateWebsiteUrl, required: false },
+  },
+
+  comment: {
+    content: { validate: validateComment, required: true },
+    item_id: { validate: validateUUID, required: false },
+    collection_id: { validate: validateUUID, required: false },
   },
 } as const;

@@ -1,33 +1,33 @@
 /**
- * Login Screen
+ * Forgot Password Screen
  *
- * SECURITY: Implements client-side validation for email format.
- * Server-side validation and rate limiting also occurs in auth context.
+ * Allows users to request a password reset email.
+ * Uses Supabase's resetPasswordForEmail method.
  */
 import { useState } from 'react';
 import { StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { router } from 'expo-router';
-import { useAuth } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 import Colors from '@/constants/Colors';
 import { validateEmail } from '@/lib/validation';
+import { FontAwesome } from '@expo/vector-icons';
 
-export default function LoginScreen() {
-  const { signIn } = useAuth();
+export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
 
   const colors = Colors.light;
 
-  const handleLogin = async () => {
-    if (!email || !password) {
-      setError('Please fill in all fields');
+  const handleResetPassword = async () => {
+    if (!email) {
+      setError('Please enter your email address');
       return;
     }
 
-    // SECURITY: Validate email format before sending to server
+    // Validate email format
     const emailValidation = validateEmail(email);
     if (!emailValidation.isValid) {
       setError(emailValidation.errors[0]);
@@ -37,14 +37,42 @@ export default function LoginScreen() {
     setLoading(true);
     setError('');
 
-    const { error: signInError } = await signIn(email, password);
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: 'tabletopvault://reset-password',
+    });
 
-    if (signInError) {
-      setError(signInError.message);
-      setLoading(false);
+    setLoading(false);
+
+    if (resetError) {
+      setError(resetError.message);
+    } else {
+      setSuccess(true);
     }
-    // Navigation will happen automatically via auth state change
   };
+
+  if (success) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.content}>
+          <View style={styles.successContainer}>
+            <View style={[styles.iconCircle, { backgroundColor: '#10b981' }]}>
+              <FontAwesome name="check" size={32} color="#fff" />
+            </View>
+            <Text style={[styles.successTitle, { color: colors.text }]}>Check Your Email</Text>
+            <Text style={[styles.successText, { color: colors.textSecondary }]}>
+              We've sent a password reset link to {email}. Click the link in the email to reset your password.
+            </Text>
+            <Pressable
+              style={[styles.button, { backgroundColor: colors.text }]}
+              onPress={() => router.replace('/(auth)/login')}
+            >
+              <Text style={[styles.buttonText, { color: colors.background }]}>Back to Login</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -52,11 +80,16 @@ export default function LoginScreen() {
       style={[styles.container, { backgroundColor: colors.background }]}
     >
       <View style={styles.content}>
+        {/* Back Button */}
+        <Pressable style={styles.backButton} onPress={() => router.back()}>
+          <FontAwesome name="arrow-left" size={20} color={colors.text} />
+        </Pressable>
+
         {/* Header */}
         <View style={styles.header}>
-          <Text style={[styles.logo, { color: colors.text }]}>Vault</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Forgot Password?</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Welcome back, Battle Brother
+            No worries, we'll send you reset instructions.
           </Text>
         </View>
 
@@ -73,30 +106,9 @@ export default function LoginScreen() {
               autoCapitalize="none"
               keyboardType="email-address"
               autoComplete="email"
+              autoFocus
             />
           </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Password</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-              placeholder="Enter your password"
-              placeholderTextColor={colors.textSecondary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoComplete="password"
-            />
-          </View>
-
-          <Pressable
-            style={styles.forgotPassword}
-            onPress={() => router.push('/(auth)/forgot-password')}
-          >
-            <Text style={[styles.forgotPasswordText, { color: colors.textSecondary }]}>
-              Forgot password?
-            </Text>
-          </Pressable>
 
           {error ? (
             <Text style={styles.error}>{error}</Text>
@@ -104,24 +116,23 @@ export default function LoginScreen() {
 
           <Pressable
             style={[styles.button, { backgroundColor: colors.text }]}
-            onPress={handleLogin}
+            onPress={handleResetPassword}
             disabled={loading}
           >
             {loading ? (
               <ActivityIndicator color={colors.background} />
             ) : (
-              <Text style={[styles.buttonText, { color: colors.background }]}>Sign In</Text>
+              <Text style={[styles.buttonText, { color: colors.background }]}>Send Reset Link</Text>
             )}
           </Pressable>
         </View>
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-            Don't have an account?
-          </Text>
-          <Pressable onPress={() => router.push('/(auth)/signup')}>
-            <Text style={[styles.link, { color: colors.text }]}> Sign up</Text>
+          <Pressable onPress={() => router.back()}>
+            <Text style={[styles.link, { color: colors.text }]}>
+              <FontAwesome name="arrow-left" size={12} color={colors.text} /> Back to Login
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -139,19 +150,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'transparent',
   },
+  backButton: {
+    position: 'absolute',
+    top: 60,
+    left: 24,
+    padding: 8,
+  },
   header: {
-    marginBottom: 48,
+    marginBottom: 32,
     backgroundColor: 'transparent',
   },
-  logo: {
-    fontSize: 48,
+  title: {
+    fontSize: 32,
     fontWeight: '700',
-    letterSpacing: -2,
+    letterSpacing: -1,
   },
   subtitle: {
     fontSize: 16,
     marginTop: 8,
-    fontStyle: 'italic',
   },
   form: {
     gap: 20,
@@ -177,14 +193,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
   },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginTop: -8,
-  },
-  forgotPasswordText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
   button: {
     height: 52,
     borderRadius: 12,
@@ -202,11 +210,32 @@ const styles = StyleSheet.create({
     marginTop: 32,
     backgroundColor: 'transparent',
   },
-  footerText: {
-    fontSize: 15,
-  },
   link: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  successContainer: {
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+  },
+  iconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  successText: {
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 32,
+    paddingHorizontal: 20,
   },
 });

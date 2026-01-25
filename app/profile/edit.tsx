@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform, ImageBackground } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform, Switch } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -11,7 +11,7 @@ import { supabase } from '@/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function EditProfileScreen() {
-  const { isDarkMode, toggleTheme, setBackgroundImagePath, refreshBackgroundImage, backgroundImageUrl } = useTheme();
+  const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
   const hasBackground = !!backgroundImageUrl;
 
@@ -20,25 +20,23 @@ export default function EditProfileScreen() {
 
   // Form state
   const [username, setUsername] = useState('');
+  const [bio, setBio] = useState('');
+  const [location, setLocation] = useState('');
+  const [isPublic, setIsPublic] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [currentAvatarUrl, setCurrentAvatarUrl] = useState<string | null>(null);
   const [imageChanged, setImageChanged] = useState(false);
 
-  // Background image state
-  const [selectedBackground, setSelectedBackground] = useState<string | null>(null);
-  const [currentBackgroundUrl, setCurrentBackgroundUrl] = useState<string | null>(null);
-  const [backgroundChanged, setBackgroundChanged] = useState(false);
-
   // Populate form with existing profile data
   useEffect(() => {
     if (profile) {
       setUsername(profile.username || '');
+      setBio(profile.bio || '');
+      setLocation(profile.location || '');
+      setIsPublic(profile.is_public || false);
       if (profile.avatar_url) {
         fetchCurrentAvatar();
-      }
-      if (profile.background_image_url) {
-        fetchCurrentBackground();
       }
     }
   }, [profile]);
@@ -50,17 +48,6 @@ export default function EditProfileScreen() {
         .createSignedUrl(profile.avatar_url, 3600);
       if (signedUrlData?.signedUrl) {
         setCurrentAvatarUrl(signedUrlData.signedUrl);
-      }
-    }
-  };
-
-  const fetchCurrentBackground = async () => {
-    if (profile?.background_image_url) {
-      const { data: signedUrlData } = await supabase.storage
-        .from('profile-images')
-        .createSignedUrl(profile.background_image_url, 3600);
-      if (signedUrlData?.signedUrl) {
-        setCurrentBackgroundUrl(signedUrlData.signedUrl);
       }
     }
   };
@@ -100,41 +87,6 @@ export default function EditProfileScreen() {
     }
   };
 
-  const pickBackground = async (useCamera: boolean) => {
-    if (useCamera) {
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Camera permission is required to take photos.');
-        return;
-      }
-    } else {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Photo library permission is required to select photos.');
-        return;
-      }
-    }
-
-    const result = useCamera
-      ? await ImagePicker.launchCameraAsync({
-          mediaTypes: ['images'],
-          allowsEditing: true,
-          aspect: [9, 16],
-          quality: 0.7,
-        })
-      : await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images'],
-          allowsEditing: true,
-          aspect: [9, 16],
-          quality: 0.7,
-        });
-
-    if (!result.canceled && result.assets[0]) {
-      setSelectedBackground(result.assets[0].uri);
-      setBackgroundChanged(true);
-    }
-  };
-
   const showImageOptions = () => {
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
@@ -154,51 +106,6 @@ export default function EditProfileScreen() {
         { text: 'Choose from Library', onPress: () => pickImage(false) },
       ]);
     }
-  };
-
-  const showBackgroundOptions = () => {
-    const hasBackground = selectedBackground || currentBackgroundUrl;
-
-    if (Platform.OS === 'ios') {
-      const options = hasBackground
-        ? ['Cancel', 'Take Photo', 'Choose from Library', 'Remove Background']
-        : ['Cancel', 'Take Photo', 'Choose from Library'];
-
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          cancelButtonIndex: 0,
-          destructiveButtonIndex: hasBackground ? 3 : undefined,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 1) pickBackground(true);
-          if (buttonIndex === 2) pickBackground(false);
-          if (buttonIndex === 3 && hasBackground) removeBackground();
-        }
-      );
-    } else {
-      const alertOptions: any[] = [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Take Photo', onPress: () => pickBackground(true) },
-        { text: 'Choose from Library', onPress: () => pickBackground(false) },
-      ];
-
-      if (hasBackground) {
-        alertOptions.push({
-          text: 'Remove Background',
-          style: 'destructive',
-          onPress: removeBackground,
-        });
-      }
-
-      Alert.alert('Change Background', 'Choose an option', alertOptions);
-    }
-  };
-
-  const removeBackground = () => {
-    setSelectedBackground(null);
-    setCurrentBackgroundUrl(null);
-    setBackgroundChanged(true);
   };
 
   const uploadAvatar = async (): Promise<string | null> => {
@@ -231,36 +138,6 @@ export default function EditProfileScreen() {
     }
   };
 
-  const uploadBackground = async (): Promise<string | null> => {
-    if (!selectedBackground || !user) return null;
-
-    try {
-      const uriWithoutParams = selectedBackground.split('?')[0];
-      const fileExt = uriWithoutParams.split('.').pop()?.toLowerCase() || 'jpg';
-      const fileName = `${user.id}/background_${Date.now()}.${fileExt}`;
-
-      const response = await fetch(selectedBackground);
-      const arrayBuffer = await response.arrayBuffer();
-
-      const { error: uploadError } = await supabase.storage
-        .from('profile-images')
-        .upload(fileName, arrayBuffer, {
-          contentType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
-          upsert: false,
-        });
-
-      if (uploadError) {
-        console.error('Background upload error:', uploadError);
-        return null;
-      }
-
-      return fileName;
-    } catch (error) {
-      console.error('Error uploading background:', error);
-      return null;
-    }
-  };
-
   const handleSubmit = async () => {
     if (!username.trim()) {
       Alert.alert('Error', 'Please enter a username');
@@ -271,6 +148,9 @@ export default function EditProfileScreen() {
 
     const updates: any = {
       username: username.trim(),
+      bio: bio.trim() || null,
+      location: location.trim() || null,
+      is_public: isPublic,
     };
 
     // Upload new avatar if changed
@@ -286,32 +166,6 @@ export default function EditProfileScreen() {
       }
     }
 
-    // Handle background image changes
-    let newBackgroundPath: string | null | undefined = undefined;
-    if (backgroundChanged) {
-      if (selectedBackground) {
-        const uploadedPath = await uploadBackground();
-        if (uploadedPath) {
-          if (profile?.background_image_url) {
-            await supabase.storage
-              .from('profile-images')
-              .remove([profile.background_image_url]);
-          }
-          updates.background_image_url = uploadedPath;
-          newBackgroundPath = uploadedPath;
-        }
-      } else {
-        // Remove background
-        if (profile?.background_image_url) {
-          await supabase.storage
-            .from('profile-images')
-            .remove([profile.background_image_url]);
-        }
-        updates.background_image_url = null;
-        newBackgroundPath = null;
-      }
-    }
-
     const { error } = await updateProfile(updates);
 
     setSaving(false);
@@ -321,22 +175,12 @@ export default function EditProfileScreen() {
       return;
     }
 
-    // Update and refresh background image in theme context
-    if (newBackgroundPath !== undefined) {
-      console.log('[Edit] Setting background path:', newBackgroundPath);
-      setBackgroundImagePath(newBackgroundPath);
-      console.log('[Edit] Calling refreshBackgroundImage with path:', newBackgroundPath);
-      await refreshBackgroundImage(newBackgroundPath);
-      console.log('[Edit] refreshBackgroundImage completed');
-    }
-
     Alert.alert('Success', 'Profile updated!', [
       { text: 'OK', onPress: () => router.back() },
     ]);
   };
 
   const displayImage = selectedImage || currentAvatarUrl;
-  const displayBackground = selectedBackground || currentBackgroundUrl;
 
   if (profileLoading) {
     return (
@@ -391,39 +235,6 @@ export default function EditProfileScreen() {
           </Pressable>
         </View>
 
-        {/* Background Image Section */}
-        <View style={styles.backgroundSection}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>App Background</Text>
-          <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-            Choose an image to display behind all screens
-          </Text>
-
-          <Pressable
-            style={[styles.backgroundPreview, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={showBackgroundOptions}
-          >
-            {displayBackground ? (
-              <ImageBackground
-                source={{ uri: displayBackground }}
-                style={styles.backgroundPreviewImage}
-                resizeMode="cover"
-              >
-                <View style={styles.backgroundOverlay}>
-                  <FontAwesome name="image" size={24} color="#fff" />
-                  <Text style={styles.backgroundOverlayText}>Tap to change</Text>
-                </View>
-              </ImageBackground>
-            ) : (
-              <View style={styles.backgroundPlaceholder}>
-                <FontAwesome name="image" size={32} color={colors.textSecondary} />
-                <Text style={[styles.backgroundPlaceholderText, { color: colors.textSecondary }]}>
-                  Tap to select background
-                </Text>
-              </View>
-            )}
-          </Pressable>
-        </View>
-
         {/* Form Fields */}
         <View style={styles.form}>
           {/* Username */}
@@ -437,6 +248,56 @@ export default function EditProfileScreen() {
               onChangeText={setUsername}
               autoCapitalize="none"
               autoCorrect={false}
+            />
+          </View>
+
+          {/* Bio */}
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Bio</Text>
+            <Text style={[styles.helperText, { color: colors.textSecondary, marginTop: 0, marginBottom: 8 }]}>
+              Max 150 characters
+            </Text>
+            <TextInput
+              style={[styles.input, styles.textArea, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+              placeholder="Tell others about yourself..."
+              placeholderTextColor={colors.textSecondary}
+              value={bio}
+              onChangeText={setBio}
+              multiline
+              numberOfLines={3}
+              maxLength={150}
+            />
+            <Text style={[styles.charCount, { color: colors.textSecondary }]}>
+              {bio.length}/150
+            </Text>
+          </View>
+
+          {/* Location */}
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Location</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+              placeholder="e.g., New York, USA"
+              placeholderTextColor={colors.textSecondary}
+              value={location}
+              onChangeText={setLocation}
+              maxLength={100}
+            />
+          </View>
+
+          {/* Public Profile Toggle */}
+          <View style={[styles.fieldGroup, styles.toggleRow]}>
+            <View style={styles.toggleInfo}>
+              <Text style={[styles.label, { color: colors.text, marginBottom: 0 }]}>Public Profile</Text>
+              <Text style={[styles.helperText, { color: colors.textSecondary, marginTop: 2 }]}>
+                Allow others to see your profile and public collections
+              </Text>
+            </View>
+            <Switch
+              value={isPublic}
+              onValueChange={setIsPublic}
+              trackColor={{ false: colors.border, true: '#991b1b' }}
+              thumbColor="#fff"
             />
           </View>
 
@@ -545,54 +406,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  backgroundSection: {
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-    backgroundColor: 'transparent',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    marginBottom: 16,
-  },
-  backgroundPreview: {
-    width: '100%',
-    height: 180,
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-  },
-  backgroundPreviewImage: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  backgroundOverlay: {
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  backgroundOverlayText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 8,
-  },
-  backgroundPlaceholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  backgroundPlaceholderText: {
-    fontSize: 14,
-  },
   form: {
     padding: 24,
     paddingTop: 0,
@@ -612,6 +425,25 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     fontSize: 16,
     borderWidth: 1,
+  },
+  textArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  charCount: {
+    fontSize: 12,
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  toggleInfo: {
+    flex: 1,
+    marginRight: 12,
+    backgroundColor: 'transparent',
   },
   readOnlyField: {
     flexDirection: 'row',

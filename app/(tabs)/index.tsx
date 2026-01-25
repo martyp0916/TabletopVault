@@ -96,7 +96,7 @@ export default function HomeScreen() {
     >
       {/* Welcome Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
+        <View style={[styles.headerLeft, hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }]}>
           <Text style={[styles.appName, { color: colors.text }]}>TabletopVault</Text>
           <Text style={[styles.greeting, { color: colors.textSecondary }]}>
             Welcome back{profile?.username ? `, ${profile.username}` : ''}
@@ -167,9 +167,11 @@ export default function HomeScreen() {
       {/* Search Results */}
       {isSearching && (
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
-            SEARCH RESULTS ({filteredItems.length})
-          </Text>
+          <View style={[styles.sectionLabelContainer, hasBackground && { backgroundColor: colors.card }]}>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+              SEARCH RESULTS ({filteredItems.length})
+            </Text>
+          </View>
           {allItemsLoading ? (
             <ActivityIndicator style={{ marginTop: 20 }} />
           ) : filteredItems.length === 0 ? (
@@ -299,7 +301,10 @@ export default function HomeScreen() {
             total models
           </Text>
         </View>
-        <View style={[styles.statCard, { backgroundColor: '#0891b2' }]}>
+        <Pressable
+          style={[styles.statCard, { backgroundColor: '#0891b2' }]}
+          onPress={() => router.push('/(tabs)/collections')}
+        >
           <View style={styles.statCardIcon}>
             <FontAwesome name="folder" size={20} color="rgba(255,255,255,0.9)" />
           </View>
@@ -309,15 +314,17 @@ export default function HomeScreen() {
           <Text style={[styles.statCardLabel, { color: 'rgba(255,255,255,0.8)' }]}>
             collections
           </Text>
-        </View>
+        </Pressable>
       </View>
 
       {/* What to Paint Next */}
       {nextUp && (
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
-            PAINT NEXT
-          </Text>
+          <View style={[styles.sectionLabelContainer, hasBackground && { backgroundColor: colors.card }]}>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+              PAINT NEXT
+            </Text>
+          </View>
           <Pressable
             style={[styles.nextCard, { backgroundColor: colors.card }]}
             onPress={() => router.push(`/item/${nextUp.id}`)}
@@ -348,7 +355,7 @@ export default function HomeScreen() {
           </Text>
         </Pressable>
         <Pressable
-          style={[styles.secondaryAction, { borderColor: colors.border }]}
+          style={[styles.secondaryAction, { backgroundColor: colors.card }]}
           onPress={() => router.push('/(tabs)/collections')}
         >
           <FontAwesome name="th-large" size={16} color={colors.text} />
@@ -361,32 +368,39 @@ export default function HomeScreen() {
       {/* Recent Items */}
       {recentItems.length > 0 && (
         <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
-            RECENT
-          </Text>
-          {recentItems.slice(0, 5).map((item) => (
-            <Pressable
-              key={item.id}
-              style={[styles.recentItem, { borderBottomColor: colors.border }]}
-              onPress={() => router.push(`/item/${item.id}`)}
-            >
-              <View
+          <View style={[styles.sectionLabelContainer, hasBackground && { backgroundColor: colors.card }]}>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+              RECENT
+            </Text>
+          </View>
+          <View style={[styles.recentItemsContainer, { backgroundColor: colors.card }]}>
+            {recentItems.slice(0, 5).map((item, index) => (
+              <Pressable
+                key={item.id}
                 style={[
-                  styles.statusDot,
-                  { backgroundColor: getStatusColor(getEffectiveStatus(item)) }
+                  styles.recentItem,
+                  index !== recentItems.slice(0, 5).length - 1 && { borderBottomColor: colors.border, borderBottomWidth: 1 }
                 ]}
-              />
-              <Text style={[styles.recentItemName, { color: colors.text }]} numberOfLines={1}>
-                {item.name}
-              </Text>
-            </Pressable>
-          ))}
+                onPress={() => router.push(`/item/${item.id}`)}
+              >
+                <View
+                  style={[
+                    styles.statusDot,
+                    { backgroundColor: getStatusColor(getEffectiveStatus(item)) }
+                  ]}
+                />
+                <Text style={[styles.recentItemName, { color: colors.text }]} numberOfLines={1}>
+                  {item.name}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
       )}
 
       {/* Empty State */}
       {!itemsLoading && recentItems.length === 0 && (
-        <View style={styles.emptyState}>
+        <View style={[styles.emptyState, hasBackground && { backgroundColor: colors.card, marginHorizontal: 24, borderRadius: 12, paddingVertical: 40 }]}>
           <FontAwesome name="inbox" size={48} color={colors.border} />
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
             Your vault is empty
@@ -437,7 +451,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 16,
+    paddingTop: 60,
     paddingBottom: 8,
     backgroundColor: 'transparent',
   },
@@ -563,11 +577,17 @@ const styles = StyleSheet.create({
     marginTop: 32,
     backgroundColor: 'transparent',
   },
+  sectionLabelContainer: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
   sectionLabel: {
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 1.5,
-    marginBottom: 12,
   },
   nextCard: {
     flexDirection: 'row',
@@ -621,18 +641,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 14,
     borderRadius: 12,
-    borderWidth: 1,
     gap: 8,
   },
   secondaryActionText: {
     fontSize: 15,
     fontWeight: '600',
   },
+  recentItemsContainer: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    overflow: 'hidden',
+  },
   recentItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
-    borderBottomWidth: 1,
     backgroundColor: 'transparent',
   },
   statusDot: {

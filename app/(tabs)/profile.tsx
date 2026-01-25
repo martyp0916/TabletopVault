@@ -1,4 +1,5 @@
-import { StyleSheet, ScrollView, Pressable, Switch, ActivityIndicator, Alert, Image, View } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, Switch, ActivityIndicator, Alert, Image, View, ActionSheetIOS, Platform, ImageBackground } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -13,15 +14,17 @@ import { useItemStats } from '@/hooks/useItems';
 import { supabase } from '@/lib/supabase';
 
 export default function ProfileScreen() {
-  const { isDarkMode, backgroundImageUrl } = useTheme();
+  const { isDarkMode, backgroundImageUrl, setBackgroundImagePath, refreshBackgroundImage } = useTheme();
   const hasBackground = !!backgroundImageUrl;
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [currentBackgroundUrl, setCurrentBackgroundUrl] = useState<string | null>(null);
+  const [savingBackground, setSavingBackground] = useState(false);
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user, signOut } = useAuth();
-  const { profile, loading: profileLoading, refresh: refreshProfile } = useProfile(user?.id);
+  const { profile, loading: profileLoading, refresh: refreshProfile, updateProfile } = useProfile(user?.id);
   const { collections } = useCollections(user?.id);
   const { stats } = useItemStats(user?.id);
 
@@ -43,12 +46,195 @@ export default function ProfileScreen() {
     fetchAvatar();
   }, [fetchAvatar]);
 
+  // Fetch background signed URL
+  const fetchBackground = useCallback(async () => {
+    if (profile?.background_image_url) {
+      const { data: signedUrlData } = await supabase.storage
+        .from('profile-images')
+        .createSignedUrl(profile.background_image_url, 3600);
+      if (signedUrlData?.signedUrl) {
+        setCurrentBackgroundUrl(signedUrlData.signedUrl);
+      }
+    } else {
+      setCurrentBackgroundUrl(null);
+    }
+  }, [profile?.background_image_url]);
+
+  useEffect(() => {
+    fetchBackground();
+  }, [fetchBackground]);
+
   // Refresh profile when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       refreshProfile();
     }, [])
   );
+
+  const pickBackground = async (useCamera: boolean) => {
+    if (useCamera) {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permission is required to take photos.');
+        return;
+      }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Photo library permission is required to select photos.');
+        return;
+      }
+    }
+
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [9, 19],
+          quality: 0.7,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [9, 19],
+          quality: 0.7,
+        });
+
+    if (!result.canceled && result.assets[0]) {
+      await saveBackground(result.assets[0].uri);
+    }
+  };
+
+  const saveBackground = async (imageUri: string) => {
+    if (!user) return;
+
+    setSavingBackground(true);
+
+    try {
+      const uriWithoutParams = imageUri.split('?')[0];
+      const fileExt = uriWithoutParams.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${user.id}/background_${Date.now()}.${fileExt}`;
+
+      const response = await fetch(imageUri);
+      const arrayBuffer = await response.arrayBuffer();
+
+      const { error: uploadError } = await supabase.storage
+        .from('profile-images')
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('Background upload error:', uploadError);
+        Alert.alert('Error', 'Failed to upload background image');
+        setSavingBackground(false);
+        return;
+      }
+
+      // Remove old background if exists
+      if (profile?.background_image_url) {
+        await supabase.storage
+          .from('profile-images')
+          .remove([profile.background_image_url]);
+      }
+
+      // Update profile
+      const { error: updateError } = await updateProfile({ background_image_url: fileName });
+
+      if (updateError) {
+        Alert.alert('Error', updateError.message);
+        setSavingBackground(false);
+        return;
+      }
+
+      // Refresh theme context
+      setBackgroundImagePath(fileName);
+      await refreshBackgroundImage(fileName);
+      await refreshProfile();
+
+      Alert.alert('Success', 'Background image updated!');
+    } catch (error) {
+      console.error('Error saving background:', error);
+      Alert.alert('Error', 'Failed to save background image');
+    }
+
+    setSavingBackground(false);
+  };
+
+  const removeBackground = async () => {
+    if (!profile?.background_image_url) return;
+
+    setSavingBackground(true);
+
+    try {
+      // Remove from storage
+      await supabase.storage
+        .from('profile-images')
+        .remove([profile.background_image_url]);
+
+      // Update profile
+      const { error: updateError } = await updateProfile({ background_image_url: null });
+
+      if (updateError) {
+        Alert.alert('Error', updateError.message);
+        setSavingBackground(false);
+        return;
+      }
+
+      // Refresh theme context
+      setBackgroundImagePath(null);
+      await refreshBackgroundImage(null);
+      setCurrentBackgroundUrl(null);
+      await refreshProfile();
+
+      Alert.alert('Success', 'Background image removed!');
+    } catch (error) {
+      console.error('Error removing background:', error);
+      Alert.alert('Error', 'Failed to remove background image');
+    }
+
+    setSavingBackground(false);
+  };
+
+  const showBackgroundOptions = () => {
+    const hasExistingBackground = !!currentBackgroundUrl;
+
+    if (Platform.OS === 'ios') {
+      const options = hasExistingBackground
+        ? ['Cancel', 'Take Photo', 'Choose from Library', 'Remove Background']
+        : ['Cancel', 'Take Photo', 'Choose from Library'];
+
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          cancelButtonIndex: 0,
+          destructiveButtonIndex: hasExistingBackground ? 3 : undefined,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) pickBackground(true);
+          if (buttonIndex === 2) pickBackground(false);
+          if (buttonIndex === 3 && hasExistingBackground) removeBackground();
+        }
+      );
+    } else {
+      const alertOptions: any[] = [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Take Photo', onPress: () => pickBackground(true) },
+        { text: 'Choose from Library', onPress: () => pickBackground(false) },
+      ];
+
+      if (hasExistingBackground) {
+        alertOptions.push({
+          text: 'Remove Background',
+          style: 'destructive',
+          onPress: removeBackground,
+        });
+      }
+
+      Alert.alert('App Background', 'Choose an option', alertOptions);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -79,7 +265,9 @@ export default function ProfileScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Profile</Text>
+        <View style={[hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, alignSelf: 'flex-start' }]}>
+          <Text style={[styles.title, { color: colors.text }]}>Profile</Text>
+        </View>
       </View>
 
       {/* User Card */}
@@ -121,9 +309,57 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {/* Customization Section */}
+      <View style={styles.section}>
+        <View style={[styles.sectionTitleContainer, hasBackground && { backgroundColor: colors.card }]}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>CUSTOMIZATION</Text>
+        </View>
+
+        {/* App Background */}
+        <Pressable
+          style={[styles.backgroundCard, { backgroundColor: colors.card }]}
+          onPress={showBackgroundOptions}
+          disabled={savingBackground}
+        >
+          <View style={styles.backgroundCardContent}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: '#7c3aed' }]}>
+                <FontAwesome name="image" size={16} color="#fff" />
+              </View>
+              <View>
+                <Text style={[styles.settingText, { color: colors.text }]}>App Background</Text>
+                <Text style={[styles.settingSubtext, { color: colors.textSecondary }]}>
+                  {currentBackgroundUrl ? 'Custom image set' : 'No background image'}
+                </Text>
+              </View>
+            </View>
+            {savingBackground ? (
+              <ActivityIndicator size="small" color={colors.textSecondary} />
+            ) : (
+              <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
+            )}
+          </View>
+          {currentBackgroundUrl && (
+            <View style={styles.backgroundPreviewContainer}>
+              <ImageBackground
+                source={{ uri: currentBackgroundUrl }}
+                style={styles.backgroundPreview}
+                resizeMode="cover"
+              >
+                <View style={styles.backgroundPreviewOverlay}>
+                  <Text style={styles.backgroundPreviewText}>Tap to change</Text>
+                </View>
+              </ImageBackground>
+            </View>
+          )}
+        </Pressable>
+      </View>
+
       {/* Settings Section */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SETTINGS</Text>
+        <View style={[styles.sectionTitleContainer, hasBackground && { backgroundColor: colors.card }]}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SETTINGS</Text>
+        </View>
 
         {/* Notifications Toggle */}
         <View style={[styles.settingRow, { backgroundColor: colors.card }]}>
@@ -144,7 +380,9 @@ export default function ProfileScreen() {
 
       {/* Account Section */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>ACCOUNT</Text>
+        <View style={[styles.sectionTitleContainer, hasBackground && { backgroundColor: colors.card }]}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>ACCOUNT</Text>
+        </View>
 
         <Pressable
           style={[styles.menuRow, { backgroundColor: colors.card }]}
@@ -185,7 +423,9 @@ export default function ProfileScreen() {
 
       {/* Support Section */}
       <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SUPPORT</Text>
+        <View style={[styles.sectionTitleContainer, hasBackground && { backgroundColor: colors.card }]}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SUPPORT</Text>
+        </View>
 
         <Pressable style={[styles.menuRow, { backgroundColor: colors.card }]}>
           <View style={styles.settingLeft}>
@@ -225,9 +465,11 @@ export default function ProfileScreen() {
       </Pressable>
 
       {/* App Version */}
-      <Text style={[styles.version, { color: colors.textSecondary }]}>
-        TabletopVault v1.0.0
-      </Text>
+      <View style={[styles.versionContainer, hasBackground && { backgroundColor: colors.card }]}>
+        <Text style={[styles.version, { color: colors.textSecondary }]}>
+          TabletopVault v1.0.0
+        </Text>
+      </View>
 
       {/* Bottom Spacing */}
       <View style={{ height: 120 }} />
@@ -241,7 +483,7 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 24,
-    paddingTop: 16,
+    paddingTop: 60,
     backgroundColor: 'transparent',
   },
   title: {
@@ -317,10 +559,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     backgroundColor: 'transparent',
   },
+  sectionTitleContainer: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
   sectionTitle: {
     fontSize: 12,
     fontWeight: '600',
-    marginBottom: 12,
     letterSpacing: 1,
   },
   settingRow: {
@@ -355,6 +603,45 @@ const styles = StyleSheet.create({
   settingText: {
     fontSize: 16,
   },
+  settingSubtext: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  backgroundCard: {
+    borderRadius: 12,
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  backgroundCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+  },
+  backgroundPreviewContainer: {
+    height: 100,
+    marginHorizontal: 14,
+    marginBottom: 14,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  backgroundPreview: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  backgroundPreviewOverlay: {
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  backgroundPreviewText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -370,9 +657,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  versionContainer: {
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 24,
+  },
   version: {
     textAlign: 'center',
-    marginTop: 24,
     fontSize: 12,
   },
 });

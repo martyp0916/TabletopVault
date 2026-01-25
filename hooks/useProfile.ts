@@ -13,12 +13,15 @@ import { User } from '@/types/database';
 import {
   validateUUID,
   validateUsername,
+  validateBio,
+  validateLocation,
+  validateWebsiteUrl,
   sanitizeString,
 } from '@/lib/validation';
 import { rateLimiter, getRateLimitKey } from '@/lib/rateLimiter';
 
 // SECURITY: Only allow specific fields to be updated
-const ALLOWED_UPDATE_FIELDS = ['username', 'avatar_url', 'background_image_url'];
+const ALLOWED_UPDATE_FIELDS = ['username', 'avatar_url', 'background_image_url', 'is_public', 'bio', 'location', 'website_url'];
 
 export function useProfile(userId: string | undefined) {
   const [profile, setProfile] = useState<User | null>(null);
@@ -89,6 +92,27 @@ export function useProfile(userId: string | undefined) {
       } else if (key === 'background_image_url') {
         // Allow null or sanitized string for background image URL
         sanitizedUpdates.background_image_url = value === null ? null : sanitizeString(value);
+      } else if (key === 'is_public') {
+        // Boolean field
+        sanitizedUpdates.is_public = Boolean(value);
+      } else if (key === 'bio') {
+        const validation = validateBio(value);
+        if (!validation.isValid) {
+          return { error: new Error(validation.errors[0]) };
+        }
+        sanitizedUpdates.bio = validation.sanitizedValue;
+      } else if (key === 'location') {
+        const validation = validateLocation(value);
+        if (!validation.isValid) {
+          return { error: new Error(validation.errors[0]) };
+        }
+        sanitizedUpdates.location = validation.sanitizedValue;
+      } else if (key === 'website_url') {
+        const validation = validateWebsiteUrl(value);
+        if (!validation.isValid) {
+          return { error: new Error(validation.errors[0]) };
+        }
+        sanitizedUpdates.website_url = validation.sanitizedValue;
       }
     }
 
