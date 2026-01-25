@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, Pressable, RefreshControl, Modal, TextInput, Alert, View } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, RefreshControl, Modal, TextInput, Alert, View, KeyboardAvoidingView, Platform } from 'react-native';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -6,7 +6,7 @@ import { useState, useCallback } from 'react';
 import { router } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
-import { usePaintQueue } from '@/hooks/usePaintQueue';
+// Paint queue hook no longer needed - Progress Queue auto-populates from item status
 import { usePaintingGoals } from '@/hooks/usePaintingGoals';
 import { useProgressStats } from '@/hooks/useProgressStats';
 import { useItems } from '@/hooks/useItems';
@@ -19,17 +19,14 @@ export default function PlanningScreen() {
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user } = useAuth();
-  const { queueItems, loading: queueLoading, addToQueue, removeFromQueue, moveUp, moveDown, refresh: refreshQueue } = usePaintQueue(user?.id);
   const { goals, activeGoals, loading: goalsLoading, createGoal, updateProgress, deleteGoal, refresh: refreshGoals } = usePaintingGoals(user?.id);
   const { overallProgress, collectionProgress, loading: progressLoading, refresh: refreshProgress } = useProgressStats(user?.id);
-  const { items } = useItems(user?.id);
+  const { items, loading: itemsLoading, refresh: refreshItems } = useItems(user?.id);
 
   const [refreshing, setRefreshing] = useState(false);
 
-  // Add to queue modal state
+  // Progress Queue modal state
   const [showQueueModal, setShowQueueModal] = useState(false);
-  const [selectedItemForQueue, setSelectedItemForQueue] = useState<Item | null>(null);
-  const [queueNotes, setQueueNotes] = useState('');
 
   // Add goal modal state
   const [showGoalModal, setShowGoalModal] = useState(false);
@@ -39,50 +36,26 @@ export default function PlanningScreen() {
   const [goalDeadline, setGoalDeadline] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  const loading = queueLoading || goalsLoading || progressLoading;
+  const loading = itemsLoading || goalsLoading || progressLoading;
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refreshQueue(), refreshGoals(), refreshProgress()]);
+    await Promise.all([refreshItems(), refreshGoals(), refreshProgress()]);
     setRefreshing(false);
-  }, [refreshQueue, refreshGoals, refreshProgress]);
+  }, [refreshItems, refreshGoals, refreshProgress]);
 
-  // Get items not already in queue
-  const availableItems = items.filter(item => {
-    const effectiveStatus = getEffectiveStatus(item);
-    return effectiveStatus !== 'painted' && !queueItems.some(q => q.item_id === item.id);
+  // Progress Queue: Auto-populate with items that have unpainted models (nib, assembled, or primed)
+  const progressQueueItems = items.filter(item => {
+    const nibCount = item.nib_count || 0;
+    const assembledCount = item.assembled_count || 0;
+    const primedCount = item.primed_count || 0;
+    return nibCount > 0 || assembledCount > 0 || primedCount > 0;
+  }).sort((a, b) => {
+    // Sort by most "ready to paint" first (primed > assembled > nib)
+    const aScore = (a.primed_count || 0) * 3 + (a.assembled_count || 0) * 2 + (a.nib_count || 0);
+    const bScore = (b.primed_count || 0) * 3 + (b.assembled_count || 0) * 2 + (b.nib_count || 0);
+    return bScore - aScore;
   });
-
-  const handleAddToQueue = async () => {
-    if (!selectedItemForQueue) return;
-
-    const { error } = await addToQueue(selectedItemForQueue.id, queueNotes);
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      setShowQueueModal(false);
-      setSelectedItemForQueue(null);
-      setQueueNotes('');
-    }
-  };
-
-  const handleRemoveFromQueue = async (queueId: string) => {
-    Alert.alert(
-      'Remove from Queue',
-      'Remove this item from your paint queue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            const { error } = await removeFromQueue(queueId);
-            if (error) Alert.alert('Error', error.message);
-          },
-        },
-      ]
-    );
-  };
 
   const handleCreateGoal = async () => {
     const target = parseInt(goalTarget, 10);
@@ -139,17 +112,18 @@ export default function PlanningScreen() {
   };
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={colors.textSecondary}
-        />
-      }
-    >
+    <View style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.textSecondary}
+          />
+        }
+      >
       {/* Header */}
       <View style={styles.header}>
         <View style={[styles.headerLeft, hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }]}>
@@ -212,85 +186,73 @@ export default function PlanningScreen() {
         </View>
       </View>
 
-      {/* Paint Queue Section */}
+      {/* Progress Queue Section */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <View style={[styles.sectionLabelContainer, hasBackground && { backgroundColor: colors.card }]}>
-            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PAINT QUEUE</Text>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PROGRESS QUEUE</Text>
           </View>
-          <Pressable onPress={() => setShowQueueModal(true)}>
-            <Text style={[styles.addButton, { color: '#991b1b' }]}>+ Add</Text>
-          </Pressable>
+          {progressQueueItems.length > 5 && (
+            <Pressable
+              style={styles.seeAllButtonContainer}
+              onPress={() => setShowQueueModal(true)}
+            >
+              <Text style={styles.seeAllButtonText}>
+                See All ({progressQueueItems.length})
+              </Text>
+              <FontAwesome name="chevron-right" size={10} color="#fff" />
+            </Pressable>
+          )}
         </View>
 
-        {queueItems.length === 0 ? (
+        {progressQueueItems.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
-            <FontAwesome name="paint-brush" size={24} color={colors.textSecondary} />
+            <FontAwesome name="check-circle" size={24} color="#10b981" />
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              Your paint queue is empty
+              All models are painted!
             </Text>
             <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-              Add items you want to paint next
+              Add new items to your collection to see them here
             </Text>
           </View>
         ) : (
           <View style={[styles.queueContainer, { backgroundColor: colors.card }]}>
-            {queueItems.map((queueItem, index) => {
-              const item = queueItem.item;
-              if (!item) return null;
+            {progressQueueItems.slice(0, 5).map((item, index) => {
               const effectiveStatus = getEffectiveStatus(item);
               const statusColor = STATUS_COLORS[effectiveStatus];
+              const nibCount = item.nib_count || 0;
+              const assembledCount = item.assembled_count || 0;
+              const primedCount = item.primed_count || 0;
+
+              // Build status details string
+              const statusParts = [];
+              if (primedCount > 0) statusParts.push(`${primedCount} primed`);
+              if (assembledCount > 0) statusParts.push(`${assembledCount} assembled`);
+              if (nibCount > 0) statusParts.push(`${nibCount} unbuilt`);
+              const statusDetail = statusParts.join(', ');
+              const displayedCount = Math.min(progressQueueItems.length, 5);
 
               return (
                 <Pressable
-                  key={queueItem.id}
+                  key={item.id}
                   style={[
                     styles.queueItem,
-                    index !== queueItems.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
+                    index !== displayedCount - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
                   ]}
                   onPress={() => router.push(`/item/${item.id}`)}
                 >
                   <View style={styles.queueItemLeft}>
-                    <View style={styles.queueArrows}>
-                      <Pressable
-                        onPress={() => moveUp(queueItem.id)}
-                        disabled={index === 0}
-                        style={styles.arrowButton}
-                      >
-                        <FontAwesome
-                          name="chevron-up"
-                          size={12}
-                          color={index === 0 ? colors.border : colors.textSecondary}
-                        />
-                      </Pressable>
-                      <Pressable
-                        onPress={() => moveDown(queueItem.id)}
-                        disabled={index === queueItems.length - 1}
-                        style={styles.arrowButton}
-                      >
-                        <FontAwesome
-                          name="chevron-down"
-                          size={12}
-                          color={index === queueItems.length - 1 ? colors.border : colors.textSecondary}
-                        />
-                      </Pressable>
-                    </View>
                     <View style={[styles.queueStatusDot, { backgroundColor: statusColor }]} />
                     <View style={styles.queueItemInfo}>
                       <Text style={[styles.queueItemName, { color: colors.text }]} numberOfLines={1}>
                         {item.name}
                       </Text>
                       <Text style={[styles.queueItemDetail, { color: colors.textSecondary }]}>
-                        {item.primed_count || 0} primed, {item.assembled_count || 0} built
+                        {statusDetail}
                       </Text>
                     </View>
                   </View>
-                  <Pressable
-                    onPress={() => handleRemoveFromQueue(queueItem.id)}
-                    style={styles.removeButton}
-                  >
-                    <FontAwesome name="times" size={16} color={colors.textSecondary} />
-                  </Pressable>
+                  <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
                 </Pressable>
               );
             })}
@@ -304,8 +266,12 @@ export default function PlanningScreen() {
           <View style={[styles.sectionLabelContainer, hasBackground && { backgroundColor: colors.card }]}>
             <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>GOALS</Text>
           </View>
-          <Pressable onPress={() => setShowGoalModal(true)}>
-            <Text style={[styles.addButton, { color: '#991b1b' }]}>+ New</Text>
+          <Pressable
+            style={styles.addButtonContainer}
+            onPress={() => setShowGoalModal(true)}
+          >
+            <FontAwesome name="plus" size={12} color="#fff" />
+            <Text style={styles.addButtonText}>New</Text>
           </Pressable>
         </View>
 
@@ -443,8 +409,9 @@ export default function PlanningScreen() {
 
       {/* Bottom Spacing */}
       <View style={{ height: 120 }} />
+      </ScrollView>
 
-      {/* Add to Queue Modal */}
+      {/* Progress Queue Modal */}
       <Modal
         visible={showQueueModal}
         animationType="slide"
@@ -452,61 +419,63 @@ export default function PlanningScreen() {
         onRequestClose={() => setShowQueueModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+          <View style={[styles.queueModalContainer, { backgroundColor: colors.card }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Add to Paint Queue</Text>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Progress Queue</Text>
               <Pressable onPress={() => setShowQueueModal(false)}>
                 <FontAwesome name="times" size={20} color={colors.textSecondary} />
               </Pressable>
             </View>
+            <Text style={[styles.queueModalSubtitle, { color: colors.textSecondary }]}>
+              {progressQueueItems.length} items need painting
+            </Text>
 
-            <Text style={[styles.modalLabel, { color: colors.text }]}>Select Item</Text>
-            <ScrollView style={styles.itemList} showsVerticalScrollIndicator={false}>
-              {availableItems.length === 0 ? (
-                <Text style={[styles.noItemsText, { color: colors.textSecondary }]}>
-                  No unpainted items available
-                </Text>
-              ) : (
-                availableItems.map((item) => {
-                  const effectiveStatus = getEffectiveStatus(item);
-                  const isSelected = selectedItemForQueue?.id === item.id;
-                  return (
-                    <Pressable
-                      key={item.id}
-                      style={[
-                        styles.itemOption,
-                        { borderColor: isSelected ? '#991b1b' : colors.border },
-                        isSelected && { backgroundColor: '#991b1b20' },
-                      ]}
-                      onPress={() => setSelectedItemForQueue(item)}
-                    >
-                      <View style={[styles.itemOptionDot, { backgroundColor: STATUS_COLORS[effectiveStatus] }]} />
-                      <Text style={[styles.itemOptionName, { color: colors.text }]} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })
-              )}
-            </ScrollView>
-
-            <Text style={[styles.modalLabel, { color: colors.text, marginTop: 16 }]}>Notes (optional)</Text>
-            <TextInput
-              style={[styles.notesInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-              placeholder="e.g., Finish highlighting"
-              placeholderTextColor={colors.textSecondary}
-              value={queueNotes}
-              onChangeText={setQueueNotes}
-              multiline
-            />
-
-            <Pressable
-              style={[styles.modalButton, !selectedItemForQueue && { opacity: 0.5 }]}
-              onPress={handleAddToQueue}
-              disabled={!selectedItemForQueue}
+            <ScrollView
+              style={styles.queueModalList}
+              showsVerticalScrollIndicator={true}
+              contentContainerStyle={styles.queueModalListContent}
             >
-              <Text style={styles.modalButtonText}>Add to Queue</Text>
-            </Pressable>
+              {progressQueueItems.map((item, index) => {
+                const effectiveStatus = getEffectiveStatus(item);
+                const statusColor = STATUS_COLORS[effectiveStatus];
+                const nibCount = item.nib_count || 0;
+                const assembledCount = item.assembled_count || 0;
+                const primedCount = item.primed_count || 0;
+
+                const statusParts = [];
+                if (primedCount > 0) statusParts.push(`${primedCount} primed`);
+                if (assembledCount > 0) statusParts.push(`${assembledCount} assembled`);
+                if (nibCount > 0) statusParts.push(`${nibCount} unbuilt`);
+                const statusDetail = statusParts.join(', ');
+
+                return (
+                  <Pressable
+                    key={item.id}
+                    style={[
+                      styles.queueModalItem,
+                      { borderBottomColor: colors.border },
+                    ]}
+                    onPress={() => {
+                      setShowQueueModal(false);
+                      router.push(`/item/${item.id}`);
+                    }}
+                  >
+                    <View style={styles.queueItemLeft}>
+                      <View style={[styles.queueStatusDot, { backgroundColor: statusColor }]} />
+                      <View style={styles.queueItemInfo}>
+                        <Text style={[styles.queueItemName, { color: colors.text }]} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Text style={[styles.queueItemDetail, { color: colors.textSecondary }]}>
+                          {statusDetail}
+                        </Text>
+                      </View>
+                    </View>
+                    <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -518,7 +487,11 @@ export default function PlanningScreen() {
         transparent={true}
         onRequestClose={() => setShowGoalModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <Pressable style={styles.modalDismiss} onPress={() => setShowGoalModal(false)} />
           <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>New Goal</Text>
@@ -527,71 +500,76 @@ export default function PlanningScreen() {
               </Pressable>
             </View>
 
-            <Text style={[styles.modalLabel, { color: colors.text }]}>Goal Title</Text>
-            <TextInput
-              style={[styles.textInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-              placeholder="e.g., Paint 10 models this month"
-              placeholderTextColor={colors.textSecondary}
-              value={goalTitle}
-              onChangeText={setGoalTitle}
-            />
-
-            <Text style={[styles.modalLabel, { color: colors.text }]}>Target Count</Text>
-            <TextInput
-              style={[styles.textInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
-              placeholder="e.g., 10"
-              placeholderTextColor={colors.textSecondary}
-              value={goalTarget}
-              onChangeText={setGoalTarget}
-              keyboardType="number-pad"
-            />
-
-            <Text style={[styles.modalLabel, { color: colors.text }]}>Deadline (optional)</Text>
-            <Pressable
-              style={[styles.dateButton, { backgroundColor: colors.background, borderColor: colors.border }]}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <Text style={{ color: goalDeadline ? colors.text : colors.textSecondary }}>
-                {goalDeadline
-                  ? goalDeadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-                  : 'Select deadline'}
-              </Text>
-              {goalDeadline && (
-                <Pressable onPress={() => setGoalDeadline(null)}>
-                  <FontAwesome name="times" size={14} color={colors.textSecondary} />
-                </Pressable>
-              )}
-            </Pressable>
-
-            {showDatePicker && (
-              <DateTimePicker
-                value={goalDeadline || new Date()}
-                mode="date"
-                display="spinner"
-                onChange={(event, date) => {
-                  setShowDatePicker(false);
-                  if (date) setGoalDeadline(date);
-                }}
-                minimumDate={new Date()}
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.modalLabel, { color: colors.text }]}>Goal Title</Text>
+              <TextInput
+                style={[styles.textInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., Paint 10 models this month"
+                placeholderTextColor={colors.textSecondary}
+                value={goalTitle}
+                onChangeText={setGoalTitle}
               />
-            )}
 
-            <Pressable
-              style={[styles.modalButton, (!goalTitle.trim() || !goalTarget) && { opacity: 0.5 }]}
-              onPress={handleCreateGoal}
-              disabled={!goalTitle.trim() || !goalTarget}
-            >
-              <Text style={styles.modalButtonText}>Create Goal</Text>
-            </Pressable>
+              <Text style={[styles.modalLabel, { color: colors.text }]}>Target Count</Text>
+              <TextInput
+                style={[styles.textInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., 10"
+                placeholderTextColor={colors.textSecondary}
+                value={goalTarget}
+                onChangeText={setGoalTarget}
+                keyboardType="number-pad"
+              />
+
+              <Text style={[styles.modalLabel, { color: colors.text }]}>Deadline (optional)</Text>
+              <Pressable
+                style={[styles.dateButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={{ color: goalDeadline ? colors.text : colors.textSecondary }}>
+                  {goalDeadline
+                    ? goalDeadline.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                    : 'Select deadline'}
+                </Text>
+                {goalDeadline && (
+                  <Pressable onPress={() => setGoalDeadline(null)}>
+                    <FontAwesome name="times" size={14} color={colors.textSecondary} />
+                  </Pressable>
+                )}
+              </Pressable>
+
+              {showDatePicker && (
+                <DateTimePicker
+                  value={goalDeadline || new Date()}
+                  mode="date"
+                  display="spinner"
+                  onChange={(event, date) => {
+                    setShowDatePicker(false);
+                    if (date) setGoalDeadline(date);
+                  }}
+                  minimumDate={new Date()}
+                />
+              )}
+
+              <Pressable
+                style={[styles.modalButton, (!goalTitle.trim() || !goalTarget) && { opacity: 0.5 }]}
+                onPress={handleCreateGoal}
+                disabled={!goalTitle.trim() || !goalTarget}
+              >
+                <Text style={styles.modalButtonText}>Create Goal</Text>
+              </Pressable>
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  scrollView: {
     flex: 1,
   },
   header: {
@@ -694,8 +672,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 1.5,
   },
-  addButton: {
+  addButtonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#991b1b',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  addButtonText: {
+    color: '#fff',
     fontSize: 14,
+    fontWeight: '700',
+  },
+  seeAllButtonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#991b1b',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  seeAllButtonText: {
+    color: '#fff',
+    fontSize: 13,
     fontWeight: '600',
   },
   emptyCard: {
@@ -727,12 +729,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  queueArrows: {
-    marginRight: 12,
-  },
-  arrowButton: {
-    padding: 4,
-  },
   queueStatusDot: {
     width: 10,
     height: 10,
@@ -749,9 +745,6 @@ const styles = StyleSheet.create({
   queueItemDetail: {
     fontSize: 12,
     marginTop: 2,
-  },
-  removeButton: {
-    padding: 8,
   },
   goalsContainer: {
     borderRadius: 12,
@@ -838,11 +831,38 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
+  modalDismiss: {
+    flex: 1,
+  },
   modalContent: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
     maxHeight: '80%',
+  },
+  queueModalContainer: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+    height: '80%',
+  },
+  queueModalSubtitle: {
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  queueModalList: {
+    flex: 1,
+  },
+  queueModalListContent: {
+    paddingBottom: 20,
+  },
+  queueModalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -859,46 +879,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 8,
   },
-  itemList: {
-    maxHeight: 200,
-  },
-  noItemsText: {
-    textAlign: 'center',
-    paddingVertical: 20,
-  },
-  itemOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  itemOptionDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 12,
-  },
-  itemOptionName: {
-    fontSize: 15,
-    flex: 1,
-  },
   textInput: {
     padding: 14,
     borderRadius: 12,
     borderWidth: 1,
     fontSize: 16,
     marginBottom: 16,
-  },
-  notesInput: {
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    fontSize: 16,
-    marginBottom: 16,
-    minHeight: 80,
-    textAlignVertical: 'top',
   },
   dateButton: {
     flexDirection: 'row',

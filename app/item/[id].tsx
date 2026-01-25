@@ -6,8 +6,6 @@ import Colors from '@/constants/Colors';
 import { useState, useEffect, useCallback } from 'react';
 import { useItem } from '@/hooks/useItems';
 import { useTheme } from '@/lib/theme';
-import { useAuth } from '@/lib/auth';
-import { usePaintQueue } from '@/hooks/usePaintQueue';
 import { supabase } from '@/lib/supabase';
 import { GAME_COLORS, STATUS_LABELS, GAME_SYSTEM_LABELS, GameSystem, ItemStatus, getEffectiveStatus } from '@/types/database';
 
@@ -23,9 +21,7 @@ interface ItemImage {
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams();
   const { isDarkMode, toggleTheme } = useTheme();
-  const { user } = useAuth();
   const [deleting, setDeleting] = useState(false);
-  const [addingToQueue, setAddingToQueue] = useState(false);
   const [photos, setPhotos] = useState<ItemImage[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [loadingPhotos, setLoadingPhotos] = useState(true);
@@ -33,7 +29,6 @@ export default function ItemDetailScreen() {
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { item, loading, error, refresh: refreshItem } = useItem(id as string);
-  const { addToQueue, isInQueue, refresh: refreshQueue } = usePaintQueue(user?.id);
 
   // Fetch all item photos
   const fetchPhotos = useCallback(async () => {
@@ -88,23 +83,9 @@ export default function ItemDetailScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refreshItem(), fetchPhotos(), refreshQueue()]);
+    await Promise.all([refreshItem(), fetchPhotos()]);
     setRefreshing(false);
-  }, [refreshItem, fetchPhotos, refreshQueue]);
-
-  const handleAddToQueue = async () => {
-    if (!id) return;
-
-    setAddingToQueue(true);
-    const { error } = await addToQueue(id as string);
-    setAddingToQueue(false);
-
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      Alert.alert('Added to Queue', 'Item added to your paint queue!');
-    }
-  };
+  }, [refreshItem, fetchPhotos]);
 
   const handleDelete = () => {
     Alert.alert(
@@ -386,35 +367,6 @@ export default function ItemDetailScreen() {
           </View>
         )}
 
-        {/* Add to Queue Button */}
-        {effectiveStatus !== 'painted' && !isInQueue(id as string) && (
-          <View style={styles.queueSection}>
-            <Pressable
-              style={[styles.queueButton, { backgroundColor: colors.card, borderColor: '#7c3aed' }]}
-              onPress={handleAddToQueue}
-              disabled={addingToQueue}
-            >
-              {addingToQueue ? (
-                <ActivityIndicator color="#7c3aed" />
-              ) : (
-                <>
-                  <FontAwesome name="paint-brush" size={16} color="#7c3aed" />
-                  <Text style={[styles.queueButtonText, { color: '#7c3aed' }]}>Add to Paint Queue</Text>
-                </>
-              )}
-            </Pressable>
-          </View>
-        )}
-
-        {isInQueue(id as string) && (
-          <View style={styles.queueSection}>
-            <View style={[styles.inQueueBadge, { backgroundColor: '#7c3aed20' }]}>
-              <FontAwesome name="check" size={14} color="#7c3aed" />
-              <Text style={[styles.inQueueText, { color: '#7c3aed' }]}>In Paint Queue</Text>
-            </View>
-          </View>
-        )}
-
         {/* Actions */}
         <View style={styles.actionsSection}>
           <Pressable
@@ -662,37 +614,6 @@ const styles = StyleSheet.create({
   notesText: {
     fontSize: 15,
     lineHeight: 22,
-  },
-  queueSection: {
-    paddingHorizontal: 20,
-    marginTop: 24,
-  },
-  queueButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 8,
-  },
-  queueButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  inQueueBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    gap: 8,
-    alignSelf: 'center',
-  },
-  inQueueText: {
-    fontSize: 14,
-    fontWeight: '600',
   },
   actionsSection: {
     flexDirection: 'row',

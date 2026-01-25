@@ -28,8 +28,8 @@ export default {
     text: '#f5f5f5',              // Off-white
     textSecondary: '#a3a3a3',     // Medium gray
     background: '#0d0d0d',        // Deep charcoal
-    card: '#171717',              // Card background
-    cardHighlight: '#262626',     // Elevated card/hover
+    card: '#1c1c1c',              // Card background - lighter for better contrast
+    cardHighlight: '#2a2a2a',     // Elevated card/hover
     tint: crimsonLight,           // Primary accent (slightly brighter for dark)
     accent: crimson,              // Secondary accent
     primary: crimsonLight,        // Buttons, links

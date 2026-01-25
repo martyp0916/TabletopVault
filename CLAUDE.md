@@ -3,47 +3,169 @@
 ## Overview
 
 **App Name**: TabletopVault
-**Purpose**: Mobile app for tabletop gaming collectors to track inventory, share collections, and monitor collection value
+**Purpose**: Mobile app for tabletop gaming collectors to track inventory, share collections, plan painting projects, and connect with other hobbyists
 **Target Games**: Warhammer 40K, Warhammer Age of Sigmar, Horus Heresy, Kill Team, Star Wars Legion, Star Wars Shatterpoint, Halo Flashpoint, Bolt Action, Marvel Crisis Protocol, Battle Tech
 **Tech Stack**: React Native + Expo + TypeScript + Supabase
 **Repository**: https://github.com/martyp0916/TabletopVault
-**Last Updated**: January 21, 2025
+**Last Updated**: January 24, 2025
 
 ---
 
-## Current Status: MVP Complete + Custom Theming
+## Current Status: Full Feature App with Social & Planning
 
-The app has a fully functional backend and polished UI with a crimson/dark theme. All core features are implemented including per-model status tracking, collection cover images, photo upload, profile editing with avatar upload, password management, custom background images, and full CRUD operations. Dark mode persists globally.
+The app is a fully-featured tabletop collection manager with social features and planning tools. All core features are complete including inventory management, social following, paint queue planning, goal tracking, and progress dashboards. The app uses a crimson/dark theme with support for custom background images.
 
 ### What's Working
 
 | Feature | Status | Notes |
 |---------|--------|-------|
+| **Authentication** | | |
 | User signup | Working | Email/password auth with validation + rate limiting |
 | User login | Working | Persists session with AsyncStorage, rate limited |
 | User logout | Working | Clears session and redirects to login |
-| **Profile editing** | Working | Edit username, avatar, and background image |
-| **Change password** | Working | Requires current password verification |
-| **Custom background image** | In Progress | Upload works, display has issues (debugging) |
+| Forgot password | Working | Email-based password reset flow |
+| Reset password | Working | Deep link handling for password reset |
+| **Profile** | | |
+| Profile editing | Working | Edit username and avatar |
+| Avatar upload | Working | Camera + gallery picker for profile photos |
+| Change password | Working | Requires current password verification |
+| Custom background image | Working | Set app-wide background from Profile tab |
+| **Collections** | | |
 | Create collection | Working | Dropdown menu with 10 supported games + cover image |
 | View collections | Working | Grid layout with item counts and cover images |
 | Edit collection | Working | Edit game, description, and cover image |
 | Delete collection | Working | With confirmation dialog |
+| Collection cover images | Working | Upload faction logos or photos for collections |
+| **Items** | | |
 | Add item | Working | Models per box + status breakdown |
 | Edit item | Working | Edit name, faction, quantity, status counts, notes |
-| **Status count tracking** | Working | Track how many models are in each status per item |
-| **Effective status display** | Working | Shows "Work in Progress" for mixed states |
-| Photo upload | Working | Camera + gallery picker, uploads to Supabase Storage |
-| **Avatar upload** | Working | Camera + gallery picker for profile photos |
-| **Collection cover images** | Working | Upload faction logos or photos for collections |
-| View items | Working | List view in collection detail |
 | View item detail | Working | Shows all item properties + photo |
 | Delete item | Working | With confirmation dialog, cleans up photos |
-| **Dashboard** | Working | 4-card status grid + search/filter |
-| **Collection stats** | Working | Shows breakdown by status |
+| Photo upload | Working | Camera + gallery picker, uploads to Supabase Storage |
+| Status count tracking | Working | Track how many models are in each status per item |
+| Effective status display | Working | Shows "Work in Progress" for mixed states |
+| **Dashboard** | | |
+| Home dashboard | Working | 4-card status grid + search/filter |
+| Collection stats | Working | Shows breakdown by status |
 | Pull-to-refresh | Working | All screens support pull-to-refresh |
+| **Social Features** | | |
+| User profiles | Working | View other users' public profiles |
+| Follow/Unfollow | Working | Follow other users to see their activity |
+| Followers list | Working | View who follows you |
+| Following list | Working | View who you follow |
+| Follower counts | Working | Display on profile pages |
+| **Planning Tab** | | |
+| Progress queue | Working | Auto-populated list of unpainted items |
+| Painting goals | Working | Create goals with optional deadlines |
+| Goal progress | Working | Track current vs target count |
+| Complete goals | Working | Mark goals as finished |
+| Overall progress | Working | Percentage of models painted across all collections |
+| Collection progress | Working | Per-collection painting progress breakdown |
+| **UI/UX** | | |
 | Global dark mode | Working | Theme persists across all tabs and screens |
-| Profile page | Working | Shows user info, avatar, stats, and settings |
+| Text visibility | Working | Solid backgrounds for text when background image set |
+| Safe area handling | Working | Content avoids phone notch/camera area |
+
+---
+
+## App Navigation Structure
+
+The app has 5 main tabs:
+
+```
+┌─────────┬─────────────┬─────────┬──────────┬─────────┐
+│  Home   │ Collections │   Add   │ Planning │ Profile │
+└─────────┴─────────────┴─────────┴──────────┴─────────┘
+```
+
+1. **Home** - Dashboard with status overview, search/filter
+2. **Collections** - Grid of user's collections
+3. **Add** - Form to add new items
+4. **Planning** - Paint queue, goals, progress tracking
+5. **Profile** - User info, settings, customization, logout
+
+---
+
+## Planning Tab Features
+
+### Progress Queue
+- Automatically shows all items with unpainted models (new in box, assembled, or primed)
+- No manual adding required - populated from collection data
+- Sorted by readiness to paint (primed items first, then assembled, then unbuilt)
+- Shows item name and status breakdown (e.g., "3 primed, 2 assembled")
+- Tap any item to view details and update status
+
+### Painting Goals
+- Create custom goals (e.g., "Paint 10 models this month")
+- Goal types: `models_painted`, `items_completed`, `custom`
+- Optional deadline with date picker
+- Track progress (current/target count)
+- Mark as complete manually or auto-complete when target reached
+- Visual progress bar
+
+### Progress Dashboard
+- **Overall Progress**: Total models painted across all collections
+- **Status Breakdown**: Count of models in each status (NIB, Assembled, Primed, Painted)
+- **Collection Progress**: Per-collection painted percentage, sorted by least progress first
+
+---
+
+## Social Features
+
+### User Profiles
+- View other users' public profiles at `/user/[id]`
+- See their username, avatar, follower/following counts
+- View their public collections and items
+
+### Follow System
+- Follow/unfollow other users
+- View followers list at `/user/followers`
+- View following list at `/user/following`
+- Follower counts displayed on profiles
+
+### Database Tables
+```sql
+follows (
+  id UUID PRIMARY KEY,
+  follower_id UUID REFERENCES profiles(id),
+  following_id UUID REFERENCES profiles(id),
+  created_at TIMESTAMPTZ,
+  UNIQUE(follower_id, following_id)
+)
+```
+
+---
+
+## Password Reset Flow
+
+### Forgot Password (`app/(auth)/forgot-password.tsx`)
+- User enters email address
+- Supabase sends password reset email
+- Rate limited to prevent abuse
+
+### Reset Password (`app/(auth)/reset-password.tsx`)
+- Handles deep link from email
+- User enters new password + confirmation
+- Password validation enforced
+- Redirects to login on success
+
+### Deep Link Configuration
+```json
+// app.json
+{
+  "scheme": "tabletvault",
+  "ios": {
+    "associatedDomains": ["applinks:hsqsskxwtknmuehrldlf.supabase.co"]
+  },
+  "android": {
+    "intentFilters": [{
+      "action": "VIEW",
+      "data": [{ "scheme": "tabletvault" }],
+      "category": ["BROWSABLE", "DEFAULT"]
+    }]
+  }
+}
+```
 
 ---
 
@@ -100,32 +222,18 @@ export function getEffectiveStatus(item: Item): ItemStatus {
 }
 ```
 
-### Database Schema
-```sql
-items table includes:
-- nib_count (integer, default 0)
-- assembled_count (integer, default 0)
-- primed_count (integer, default 0)
-- painted_count (integer, default 0)
-- based_count (integer, default 0) -- kept for backwards compatibility
-
-profiles table includes:
-- background_image_url (text, nullable) -- custom app background
-```
-
 ---
 
 ## Custom Background Image Feature
 
-**Status**: In Progress (upload works, display debugging needed)
-
 ### How It Works
-1. User goes to Profile → Edit Profile
-2. "App Background" section allows selecting an image
+1. User goes to Profile tab → "CUSTOMIZATION" section
+2. "App Background" option allows selecting an image
 3. Image uploads to `profile-images` bucket as `{user_id}/background_{timestamp}.ext`
 4. Path saved to `profiles.background_image_url`
 5. ThemeProvider fetches signed URL and provides to all screens
 6. Root layout wraps app in ImageBackground with semi-transparent overlay
+7. All tab screens have transparent backgrounds and solid containers for text visibility
 
 ### Files Involved
 - `types/database.ts` - Added `background_image_url` to User interface
@@ -133,33 +241,8 @@ profiles table includes:
 - `lib/theme.tsx` - Extended with `backgroundImageUrl`, `setBackgroundImagePath`, `refreshBackgroundImage`
 - `app/_layout.tsx` - Added ImageBackground wrapper in RootLayoutNav
 - `app/(tabs)/_layout.tsx` - Made tab bar transparent when background set
-- `app/profile/edit.tsx` - Added background picker UI
-- All tab screens - Updated to use transparent backgrounds
-
-### Known Issue
-Background appears black instead of showing the uploaded image. Debug logging added to trace the issue. Console logs show:
-- `[Layout] ThemeWithProfile - profile?.background_image_url: ...`
-- `[Theme] refreshBackgroundImage called with path: ...`
-- `[Layout] backgroundImageUrl: SET or NULL`
-
----
-
-## Profile Management
-
-### Edit Profile (app/profile/edit.tsx)
-- Edit username
-- Upload avatar photo (camera or gallery)
-- **Upload background image** (camera or gallery, 9:16 aspect)
-- Remove background option
-- Avatar stored in `profile-images` Supabase bucket
-- Uses `fetch` + `arrayBuffer()` for reliable React Native uploads
-
-### Change Password (app/profile/change-password.tsx)
-- Requires current password for verification
-- New password + confirm password fields
-- Show/hide password toggles
-- Minimum 6 character validation
-- Verifies current password via `signInWithPassword` before updating
+- `app/(tabs)/profile.tsx` - Background picker in CUSTOMIZATION section
+- All tab screens - Updated with `paddingTop: 60` and background containers for text
 
 ---
 
@@ -187,12 +270,8 @@ Schema-based validation with type checking, length limits, and sanitization:
 | Notes | Max 2000 chars |
 | Quantities | 0-10,000 range, integer only |
 | Prices | 0-$1,000,000 range |
-
-**Sanitization features:**
-- Removes null bytes (prevents null byte injection)
-- Strips control characters
-- Normalizes whitespace
-- HTML escaping for display
+| Goal title | Max 100 chars |
+| Goal target | 1-10,000 range |
 
 ### Rate Limiting (lib/rateLimiter.ts)
 Client-side rate limiting with sensible defaults:
@@ -208,25 +287,13 @@ Client-side rate limiting with sensible defaults:
 | File Upload | 10 uploads | 1 minute | 1 sec between |
 | Data Read | 100 requests | 1 minute | 100ms throttle |
 
-**Features:**
-- IP + user-based rate limiting
-- Graceful 429 errors with retry-after time
-- Rate limits cleared on successful auth
-- RateLimitError class for proper error handling
-
 ### Mass Assignment Protection
 All hooks reject unexpected fields:
 - `useCollections`: Only allows `name`, `description`, `is_public`, `cover_image_url`
 - `useItems`: Only allows defined item fields
 - `useProfile`: Only allows `username`, `avatar_url`, `background_image_url`
-- Unexpected fields are logged and rejected
-
-### Auth Security (lib/auth.tsx)
-- Email validation before server requests
-- Password complexity requirements enforced
-- Username sanitization
-- Rate limiting on sign in/up to prevent brute force
-- Rate limits cleared on successful authentication
+- `usePaintQueue`: Only allows `item_id`, `priority`, `notes`
+- `usePaintingGoals`: Only allows defined goal fields
 
 ### OWASP Compliance
 - **A01:2021 - Broken Access Control**: RLS policies + client-side validation
@@ -262,34 +329,48 @@ TabletopVault/
 │   ├── (auth)/                   # Auth screens
 │   │   ├── _layout.tsx           # Auth stack layout
 │   │   ├── login.tsx             # Login form with validation
-│   │   └── signup.tsx            # Signup form with validation
+│   │   ├── signup.tsx            # Signup form with validation
+│   │   ├── forgot-password.tsx   # Forgot password screen
+│   │   └── reset-password.tsx    # Reset password (deep link)
 │   ├── (tabs)/                   # Main tab navigation
 │   │   ├── _layout.tsx           # Tab bar (transparent when background set)
 │   │   ├── index.tsx             # Home dashboard + search/filter
 │   │   ├── collections.tsx       # Collections grid + cover images
 │   │   ├── add.tsx               # Add item form + status counts
-│   │   └── profile.tsx           # User profile & settings
+│   │   ├── planning.tsx          # Paint queue, goals, progress
+│   │   └── profile.tsx           # User profile, settings, customization
 │   ├── collection/
 │   │   ├── [id].tsx              # Collection detail + status breakdown
 │   │   └── edit/
 │   │       └── [id].tsx          # Edit collection + cover image
 │   ├── item/
-│   │   ├── [id].tsx              # Item detail + edit/delete
+│   │   ├── [id].tsx              # Item detail + edit/delete + add to queue
 │   │   └── edit/
 │   │       └── [id].tsx          # Edit item + status counts
 │   ├── profile/
-│   │   ├── edit.tsx              # Edit profile (username, avatar, background)
+│   │   ├── edit.tsx              # Edit profile (username, avatar)
 │   │   └── change-password.tsx   # Change password screen
+│   ├── user/
+│   │   ├── _layout.tsx           # User profile stack layout
+│   │   ├── [id].tsx              # View other user's profile
+│   │   ├── followers.tsx         # Followers list
+│   │   └── following.tsx         # Following list
 │   └── _layout.tsx               # Root layout with ImageBackground wrapper
 ├── components/
 │   ├── Themed.tsx                # Theme-aware Text/View components
+│   ├── FollowButton.tsx          # Follow/unfollow button component
+│   ├── UserAvatar.tsx            # User avatar display component
 │   └── useColorScheme.ts         # System color scheme hook
 ├── constants/
 │   └── Colors.ts                 # Crimson theme colors (Battle Ready Edition)
 ├── hooks/
 │   ├── useCollections.ts         # Collection CRUD with validation
 │   ├── useItems.ts               # Item CRUD with validation + stats
-│   └── useProfile.ts             # Profile operations with validation
+│   ├── useProfile.ts             # Profile operations with validation
+│   ├── useFollows.ts             # Follow/unfollow operations
+│   ├── usePaintQueue.ts          # Paint queue management
+│   ├── usePaintingGoals.ts       # Painting goals CRUD
+│   └── useProgressStats.ts       # Progress calculations
 ├── lib/
 │   ├── auth.tsx                  # AuthContext with rate limiting
 │   ├── rateLimiter.ts            # Rate limiting utilities
@@ -300,12 +381,15 @@ TabletopVault/
 │   ├── config.toml               # Supabase local config
 │   └── migrations/
 │       ├── 20250111000000_initial_schema.sql
-│       └── 20250121000000_add_background_image.sql
+│       ├── 20250121000000_add_background_image.sql
+│       ├── 20250122000000_add_social_features.sql
+│       └── 20250124000000_add_planning_features.sql
 ├── types/
-│   └── database.ts               # TypeScript interfaces + getEffectiveStatus()
+│   └── database.ts               # TypeScript interfaces + helpers
 ├── .env                          # Environment variables (git ignored)
 ├── .env.example                  # Template for env vars
-├── app.json                      # Expo configuration
+├── app.json                      # Expo configuration with deep links
+├── eas.json                      # EAS Build configuration
 ├── package.json                  # Dependencies
 └── tsconfig.json                 # TypeScript config
 ```
@@ -319,78 +403,71 @@ TabletopVault/
 
 ### Database Tables
 
-| Table | Columns | Purpose |
-|-------|---------|---------|
-| `profiles` | id, email, username, avatar_url, **background_image_url**, is_premium, created_at, updated_at | User profiles |
-| `collections` | id, user_id, name, description, is_public, cover_image_url, created_at, updated_at | Groups of items |
-| `items` | id, collection_id, user_id, name, game_system, faction, quantity, status, nib_count, assembled_count, primed_count, painted_count, based_count, purchase_price, current_value, purchase_date, notes, created_at, updated_at | Individual miniatures |
-| `item_images` | id, item_id, image_url, is_primary, created_at | Photos for items |
+| Table | Purpose |
+|-------|---------|
+| `profiles` | User profiles (id, email, username, avatar_url, background_image_url, is_premium) |
+| `collections` | Groups of items (id, user_id, name, description, is_public, cover_image_url) |
+| `items` | Individual miniatures with status counts |
+| `item_images` | Photos for items |
+| `follows` | User follow relationships (follower_id, following_id) |
+| `painting_goals` | User goals with deadlines (title, goal_type, target_count, current_count, deadline) |
 
 ### Supabase Storage Buckets
 
-**Bucket**: `item-images` (private)
-- Stores all item photos
-- Path: `{user_id}/{item_id}/{timestamp}.{ext}`
-- Access via signed URLs (1 hour expiry)
-
-**Bucket**: `collection-images` (private)
-- Stores collection cover images
-- Path: `{user_id}/{collection_id}/{timestamp}.{ext}`
-- Access via signed URLs (1 hour expiry)
-
-**Bucket**: `profile-images` (private)
-- Stores user avatars and background images
-- Avatar path: `{user_id}/avatar_{timestamp}.{ext}`
-- Background path: `{user_id}/background_{timestamp}.{ext}`
-- Access via signed URLs (1 hour expiry)
+| Bucket | Purpose | Path Format |
+|--------|---------|-------------|
+| `item-images` | Item photos | `{user_id}/{item_id}/{timestamp}.{ext}` |
+| `collection-images` | Collection covers | `{user_id}/{collection_id}/{timestamp}.{ext}` |
+| `profile-images` | Avatars & backgrounds | `{user_id}/avatar_{timestamp}.{ext}` or `background_{timestamp}.{ext}` |
 
 ### Row Level Security Policies
 
 All tables have RLS enabled with user-based access control:
 - Users can only access their own data
 - Public collections/items visible to all (when is_public = true)
-- Service role used for signup trigger
+- Users can view other users' public profiles
+- Follow relationships visible to involved users
 
 ---
 
-## Key Files Reference
-
-### Theme System (lib/theme.tsx)
+## Type Definitions (types/database.ts)
 
 ```typescript
-interface ThemeContextType {
-  isDarkMode: boolean;
-  toggleTheme: () => void;
-  backgroundImageUrl: string | null;
-  setBackgroundImagePath: (path: string | null) => void;
-  refreshBackgroundImage: (path?: string | null) => Promise<void>;
-}
-```
-
-- Manages dark mode state globally
-- Handles background image signed URL fetching
-- Uses ref to avoid stale closure issues
-
-### Type Definitions (types/database.ts)
-
-```typescript
+// Game and Status Types
 type GameSystem = 'wh40k' | 'aos' | 'legion' | 'other';
 type ItemStatus = 'nib' | 'assembled' | 'primed' | 'painted' | 'based' | 'wip';
+type GoalType = 'models_painted' | 'items_completed' | 'custom';
 
-interface User {
-  id: string;
-  email: string;
-  username: string;
-  avatar_url: string | null;
-  background_image_url: string | null;
-  is_premium: boolean;
-  created_at: string;
-  updated_at: string;
-}
+// Core Interfaces
+interface User { id, email, username, avatar_url, background_image_url, is_premium, ... }
+interface Collection { id, user_id, name, description, is_public, cover_image_url, ... }
+interface Item { id, collection_id, user_id, name, nib_count, assembled_count, primed_count, painted_count, ... }
 
-// Helper function
+// Social Interfaces
+interface Follow { id, follower_id, following_id, created_at }
+
+// Planning Interfaces
+interface PaintQueueItem { id, user_id, item_id, priority, notes, item?: Item }
+interface PaintingGoal { id, user_id, title, goal_type, target_count, current_count, deadline, is_completed }
+
+// Helper Functions
 getEffectiveStatus(item: Item): ItemStatus
+getStatusLabel(status: ItemStatus): string
+getStatusColor(status: ItemStatus): string
 ```
+
+---
+
+## Hooks Reference
+
+| Hook | Purpose |
+|------|---------|
+| `useCollections` | CRUD for collections with validation |
+| `useItems` | CRUD for items with validation and stats |
+| `useProfile` | Profile operations (fetch, update) |
+| `useFollows` | Follow/unfollow, get followers/following |
+| `usePaintingGoals` | CRUD for painting goals, progress tracking |
+| `useProgressStats` | Calculate overall and per-collection progress |
 
 ---
 
@@ -407,30 +484,22 @@ getEffectiveStatus(item: Item): ItemStatus
 - [x] Security hardening (validation, rate limiting, env vars)
 - [x] Crimson color theme
 - [x] Search and filter on dashboard
-- [x] Custom background image upload (partial - display issues)
-
-### In Progress
-- [ ] Custom background image display (debugging)
+- [x] Custom background image
+- [x] Password reset flow (forgot password via email)
+- [x] Social features (follow system, user profiles)
+- [x] Planning tab with paint queue
+- [x] Painting goals with deadlines
+- [x] Progress dashboard
+- [x] Text visibility improvements
+- [x] Safe area handling for phone notch
 
 ### Future Enhancements
-- [ ] Password reset flow (forgot password via email)
+- [ ] Activity feed (see what followed users are painting)
+- [ ] Comments and likes on items
 - [ ] Export data to CSV/PDF
 - [ ] Premium subscription features
-- [ ] Social features (sharing, following)
-- [ ] Public image sharing option
-
----
-
-## Known Issues
-
-### Background Image Shows Black
-**Status**: Debugging
-**Symptoms**: Image uploads successfully, but displays as black on all tabs
-**Debug logs added**: Check Expo console for `[Layout]` and `[Theme]` messages
-**Possible causes**:
-1. Signed URL not being generated correctly
-2. ImageBackground not receiving the URL
-3. Profile not refreshing after update
+- [ ] Push notifications for goal deadlines
+- [ ] Sharing collections publicly
 
 ---
 
@@ -449,6 +518,8 @@ npm install
 # Run database migration
 node -e "
 const { Client } = require('pg');
+const fs = require('fs');
+const sql = fs.readFileSync('supabase/migrations/MIGRATION_FILE.sql', 'utf8');
 const client = new Client({
   host: 'db.hsqsskxwtknmuehrldlf.supabase.co',
   port: 5432,
@@ -457,10 +528,15 @@ const client = new Client({
   password: 'w1MH8S3JEkzeEt0c',
   ssl: { rejectUnauthorized: false }
 });
-client.connect().then(() => {
-  return client.query('YOUR SQL HERE');
-}).then(() => client.end());
+client.connect().then(() => client.query(sql)).then(() => {
+  console.log('Migration completed!');
+  client.end();
+});
 "
+
+# Build for production
+eas build --platform ios
+eas build --platform android
 ```
 
 ---
@@ -473,6 +549,8 @@ client.connect().then(() => {
 4. Create a collection (select game, optionally add cover image)
 5. Add items with status breakdown
 6. View dashboard - search/filter items, see status counts
-7. Edit profile - change username, avatar, background image
-8. Toggle dark mode - persists across all screens
-9. Check console logs for debugging background image issues
+7. Use Planning tab - add items to queue, create goals
+8. Edit profile - change username, avatar
+9. Set custom background image from Profile tab
+10. Toggle dark mode - persists across all screens
+11. Follow other users and view their profiles
