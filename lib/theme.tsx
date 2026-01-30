@@ -1,8 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { useColorScheme } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+
+const THEME_STORAGE_KEY = '@tabletopvault_theme';
+
+export type ThemeMode = 'light' | 'dark' | 'system';
 
 interface ThemeContextType {
   isDarkMode: boolean;
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
   toggleTheme: () => void;
   backgroundImageUrl: string | null;
   setBackgroundImagePath: (path: string | null) => void;
@@ -18,15 +26,55 @@ export function ThemeProvider({
   children: ReactNode;
   backgroundPath?: string | null;
 }) {
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [themeLoaded, setThemeLoaded] = useState(false);
   const [backgroundImageUrl, setBackgroundImageUrl] = useState<string | null>(null);
   const [backgroundImagePath, setBackgroundImagePath] = useState<string | null>(backgroundPath || null);
+
+  // Get system color scheme
+  const systemColorScheme = useColorScheme();
+
+  // Compute isDarkMode based on themeMode and system preference
+  const isDarkMode = themeMode === 'system'
+    ? systemColorScheme === 'dark'
+    : themeMode === 'dark';
 
   // Use ref to track the latest path for async operations
   const pathRef = useRef<string | null>(backgroundPath || null);
 
-  const toggleTheme = () => {
-    setIsDarkMode(prev => !prev);
+  // Load saved theme preference on mount
+  useEffect(() => {
+    const loadTheme = async () => {
+      try {
+        const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+        if (savedTheme !== null) {
+          // Support legacy 'dark'/'light' values and new 'system' value
+          if (savedTheme === 'dark' || savedTheme === 'light' || savedTheme === 'system') {
+            setThemeModeState(savedTheme as ThemeMode);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading theme preference:', error);
+      } finally {
+        setThemeLoaded(true);
+      }
+    };
+    loadTheme();
+  }, []);
+
+  const setThemeMode = useCallback(async (mode: ThemeMode) => {
+    setThemeModeState(mode);
+    try {
+      await AsyncStorage.setItem(THEME_STORAGE_KEY, mode);
+    } catch (error) {
+      console.error('Error saving theme preference:', error);
+    }
+  }, []);
+
+  const toggleTheme = async () => {
+    // Toggle cycles through: light -> dark -> system -> light
+    const nextMode: ThemeMode = themeMode === 'light' ? 'dark' : themeMode === 'dark' ? 'system' : 'light';
+    await setThemeMode(nextMode);
   };
 
   // Update ref when state changes
@@ -88,6 +136,8 @@ export function ThemeProvider({
   return (
     <ThemeContext.Provider value={{
       isDarkMode,
+      themeMode,
+      setThemeMode,
       toggleTheme,
       backgroundImageUrl,
       setBackgroundImagePath: setBackgroundImagePathWithRef,

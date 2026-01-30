@@ -38,7 +38,12 @@ export default function FollowingScreen() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setFollowing(data || []);
+      // Transform data: Supabase returns nested object, extract it
+      const transformed = (data || []).map((item: any) => ({
+        id: item.id,
+        following: Array.isArray(item.following) ? item.following[0] : item.following,
+      })).filter((item: any) => item.following);
+      setFollowing(transformed);
     } catch (e) {
       console.error('Error fetching following:', e);
     } finally {

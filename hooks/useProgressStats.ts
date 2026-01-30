@@ -1,7 +1,7 @@
 /**
  * Progress Stats Hook
  *
- * Calculates painting progress statistics by collection.
+ * Calculates painting progress statistics by game system.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
@@ -13,6 +13,14 @@ export interface CollectionProgress {
   totalModels: number;
   paintedModels: number;
   percentage: number;
+}
+
+export interface GameSystemProgress {
+  gameSystem: string;
+  totalModels: number;
+  paintedModels: number;
+  percentage: number;
+  collectionCount: number;
 }
 
 export interface OverallProgress {
@@ -34,6 +42,7 @@ export function useProgressStats(userId: string | undefined) {
     primedModels: 0,
   });
   const [collectionProgress, setCollectionProgress] = useState<CollectionProgress[]>([]);
+  const [gameSystemProgress, setGameSystemProgress] = useState<GameSystemProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +57,7 @@ export function useProgressStats(userId: string | undefined) {
         primedModels: 0,
       });
       setCollectionProgress([]);
+      setGameSystemProgress([]);
       setLoading(false);
       return;
     }
@@ -152,6 +162,34 @@ export function useProgressStats(userId: string | undefined) {
       collectionProgressData.sort((a, b) => a.percentage - b.percentage);
 
       setCollectionProgress(collectionProgressData);
+
+      // Calculate per-game-system progress
+      // Group collections by their name (which is the game system)
+      const gameSystemMap = new Map<string, { totalModels: number; paintedModels: number; collectionCount: number }>();
+
+      collectionProgressData.forEach((cp) => {
+        const gameSystem = cp.collection.name;
+        const existing = gameSystemMap.get(gameSystem) || { totalModels: 0, paintedModels: 0, collectionCount: 0 };
+
+        gameSystemMap.set(gameSystem, {
+          totalModels: existing.totalModels + cp.totalModels,
+          paintedModels: existing.paintedModels + cp.paintedModels,
+          collectionCount: existing.collectionCount + 1,
+        });
+      });
+
+      const gameSystemProgressData: GameSystemProgress[] = Array.from(gameSystemMap.entries()).map(([gameSystem, data]) => ({
+        gameSystem,
+        totalModels: data.totalModels,
+        paintedModels: data.paintedModels,
+        percentage: data.totalModels > 0 ? Math.round((data.paintedModels / data.totalModels) * 100) : 0,
+        collectionCount: data.collectionCount,
+      }));
+
+      // Sort by percentage (lowest first - most work needed)
+      gameSystemProgressData.sort((a, b) => a.percentage - b.percentage);
+
+      setGameSystemProgress(gameSystemProgressData);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -166,6 +204,7 @@ export function useProgressStats(userId: string | undefined) {
   return {
     overallProgress,
     collectionProgress,
+    gameSystemProgress,
     loading,
     error,
     refresh: fetchProgress,

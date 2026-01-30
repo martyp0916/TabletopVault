@@ -45,7 +45,7 @@ export function useCollections(userId: string | undefined) {
         .from('collections')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('sort_order', { ascending: true });
 
       if (error) throw error;
       setCollections(data || []);
@@ -86,18 +86,22 @@ export function useCollections(userId: string | undefined) {
       return { error: new Error(rateLimitResult.error || 'Too many requests. Please slow down.') };
     }
 
+    // Get the next sort_order value
+    const nextSortOrder = collections.length;
+
     const { data, error } = await supabase
       .from('collections')
       .insert({
         user_id: userId,
         name: nameValidation.sanitizedValue,
         description: descValidation.sanitizedValue,
+        sort_order: nextSortOrder,
       })
       .select()
       .single();
 
     if (!error && data) {
-      setCollections(prev => [data, ...prev]);
+      setCollections(prev => [...prev, data]);
     }
 
     return { data, error };
@@ -115,7 +119,7 @@ export function useCollections(userId: string | undefined) {
     }
 
     // SECURITY: Only allow specific fields to be updated (prevent mass assignment)
-    const allowedFields = ['name', 'description', 'is_public', 'cover_image_url'];
+    const allowedFields = ['name', 'description', 'is_public', 'is_complete', 'is_locked', 'cover_image_url', 'sort_order'];
     const sanitizedUpdates: Record<string, any> = {};
 
     for (const [key, value] of Object.entries(updates)) {
@@ -138,9 +142,12 @@ export function useCollections(userId: string | undefined) {
           return { error: new Error(validation.errors[0]) };
         }
         sanitizedUpdates[key] = validation.sanitizedValue;
-      } else if (key === 'is_public') {
+      } else if (key === 'is_public' || key === 'is_complete' || key === 'is_locked') {
         // Boolean validation
         sanitizedUpdates[key] = Boolean(value);
+      } else if (key === 'sort_order') {
+        // Integer validation for sort order
+        sanitizedUpdates[key] = parseInt(value as string) || 0;
       } else if (key === 'cover_image_url') {
         // Allow null or string for image URL
         sanitizedUpdates[key] = value === null ? null : sanitizeString(value);
@@ -198,6 +205,31 @@ export function useCollections(userId: string | undefined) {
     return { error };
   };
 
+  /**
+   * Reorder collections
+   * Updates the sort_order of all collections based on the new order
+   */
+  const reorderCollections = async (reorderedCollections: Collection[]) => {
+    // Update local state immediately for responsive UI
+    setCollections(reorderedCollections);
+
+    // Update sort_order in database for each collection
+    const updates = reorderedCollections.map((col, index) =>
+      supabase
+        .from('collections')
+        .update({ sort_order: index })
+        .eq('id', col.id)
+    );
+
+    try {
+      await Promise.all(updates);
+    } catch (e: any) {
+      console.error('Error reordering collections:', e);
+      // Refresh to restore correct order on error
+      fetchCollections();
+    }
+  };
+
   return {
     collections,
     loading,
@@ -206,6 +238,7 @@ export function useCollections(userId: string | undefined) {
     createCollection,
     updateCollection,
     deleteCollection,
+    reorderCollections,
   };
 }
 

@@ -10,17 +10,20 @@ import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
 import { useProfile } from '@/hooks/useProfile';
 import { useCollections } from '@/hooks/useCollections';
-import { useItemStats } from '@/hooks/useItems';
+import { useItemStats, useItems } from '@/hooks/useItems';
 import { supabase } from '@/lib/supabase';
+import { exportToCSV, exportToPDF, ExportCollection } from '@/lib/exportData';
 
 export default function ProfileScreen() {
-  const { isDarkMode, backgroundImageUrl, setBackgroundImagePath, refreshBackgroundImage } = useTheme();
+  const { isDarkMode, themeMode, setThemeMode, backgroundImageUrl, setBackgroundImagePath, refreshBackgroundImage } = useTheme();
   const hasBackground = !!backgroundImageUrl;
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [currentBackgroundUrl, setCurrentBackgroundUrl] = useState<string | null>(null);
   const [savingBackground, setSavingBackground] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user, signOut } = useAuth();
@@ -102,6 +105,163 @@ export default function ProfileScreen() {
 
     if (!result.canceled && result.assets[0]) {
       await saveBackground(result.assets[0].uri);
+    }
+  };
+
+  const pickAvatar = async (useCamera: boolean) => {
+    if (useCamera) {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Camera permission is required to take photos.');
+        return;
+      }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Photo library permission is required to select photos.');
+        return;
+      }
+    }
+
+    const result = useCamera
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+
+    if (!result.canceled && result.assets[0]) {
+      await saveAvatar(result.assets[0].uri);
+    }
+  };
+
+  const saveAvatar = async (imageUri: string) => {
+    if (!user) return;
+
+    setSavingAvatar(true);
+
+    try {
+      const uriWithoutParams = imageUri.split('?')[0];
+      const fileExt = uriWithoutParams.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${user.id}/avatar_${Date.now()}.${fileExt}`;
+
+      const response = await fetch(imageUri);
+      const arrayBuffer = await response.arrayBuffer();
+
+      const { error: uploadError } = await supabase.storage
+        .from('profile-images')
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${fileExt === 'jpg' ? 'jpeg' : fileExt}`,
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('Avatar upload error:', uploadError);
+        Alert.alert('Error', 'Failed to upload profile picture');
+        setSavingAvatar(false);
+        return;
+      }
+
+      // Remove old avatar if exists
+      if (profile?.avatar_url) {
+        await supabase.storage
+          .from('profile-images')
+          .remove([profile.avatar_url]);
+      }
+
+      // Update profile
+      const { error: updateError } = await updateProfile({ avatar_url: fileName });
+
+      if (updateError) {
+        Alert.alert('Error', updateError.message);
+        setSavingAvatar(false);
+        return;
+      }
+
+      await refreshProfile();
+      Alert.alert('Success', 'Profile picture updated!');
+    } catch (error) {
+      console.error('Error saving avatar:', error);
+      Alert.alert('Error', 'Failed to save profile picture');
+    }
+
+    setSavingAvatar(false);
+  };
+
+  const removeAvatar = async () => {
+    if (!profile?.avatar_url) return;
+
+    setSavingAvatar(true);
+
+    try {
+      // Remove from storage
+      await supabase.storage
+        .from('profile-images')
+        .remove([profile.avatar_url]);
+
+      // Update profile to remove avatar
+      const { error: updateError } = await updateProfile({ avatar_url: null });
+
+      if (updateError) {
+        Alert.alert('Error', updateError.message);
+        setSavingAvatar(false);
+        return;
+      }
+
+      setAvatarUrl(null);
+      await refreshProfile();
+      Alert.alert('Success', 'Profile picture removed!');
+    } catch (error) {
+      console.error('Error removing avatar:', error);
+      Alert.alert('Error', 'Failed to remove profile picture');
+    }
+
+    setSavingAvatar(false);
+  };
+
+  const showAvatarOptions = () => {
+    const hasAvatar = !!avatarUrl;
+
+    if (Platform.OS === 'ios') {
+      const options = hasAvatar
+        ? ['Cancel', 'Take Photo', 'Choose from Library', 'Remove Photo']
+        : ['Cancel', 'Take Photo', 'Choose from Library'];
+
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options,
+          cancelButtonIndex: 0,
+          destructiveButtonIndex: hasAvatar ? 3 : undefined,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) pickAvatar(true);
+          if (buttonIndex === 2) pickAvatar(false);
+          if (buttonIndex === 3 && hasAvatar) removeAvatar();
+        }
+      );
+    } else {
+      const alertOptions: any[] = [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Take Photo', onPress: () => pickAvatar(true) },
+        { text: 'Choose from Library', onPress: () => pickAvatar(false) },
+      ];
+
+      if (hasAvatar) {
+        alertOptions.push({
+          text: 'Remove Photo',
+          style: 'destructive',
+          onPress: removeAvatar,
+        });
+      }
+
+      Alert.alert('Profile Picture', 'Choose an option', alertOptions);
     }
   };
 
@@ -236,6 +396,64 @@ export default function ProfileScreen() {
     }
   };
 
+  // Export functions
+  const handleExportData = async (format: 'csv' | 'pdf') => {
+    if (collections.length === 0) {
+      Alert.alert('No Data', 'You don\'t have any collections to export.');
+      return;
+    }
+
+    setExporting(true);
+
+    try {
+      // Fetch all items for all collections
+      const { data: allItems, error } = await supabase
+        .from('items')
+        .select('*')
+        .eq('user_id', user?.id);
+
+      if (error) throw error;
+
+      // Group items by collection
+      const exportCollections: ExportCollection[] = collections.map((collection) => ({
+        ...collection,
+        items: (allItems || []).filter((item) => item.collection_id === collection.id),
+      }));
+
+      if (format === 'csv') {
+        await exportToCSV(exportCollections, `tabletopvault-${Date.now()}`);
+      } else {
+        await exportToPDF(exportCollections, 'TabletopVault Collections');
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      Alert.alert('Export Failed', 'There was an error exporting your data. Please try again.');
+    }
+
+    setExporting(false);
+  };
+
+  const showExportOptions = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Export as CSV', 'Export as PDF'],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) handleExportData('csv');
+          if (buttonIndex === 2) handleExportData('pdf');
+        }
+      );
+    } else {
+      Alert.alert('Export Data', 'Choose export format', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Export as CSV', onPress: () => handleExportData('csv') },
+        { text: 'Export as PDF', onPress: () => handleExportData('pdf') },
+      ]);
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert(
       'Log Out',
@@ -272,19 +490,32 @@ export default function ProfileScreen() {
 
       {/* User Card */}
       <View style={[styles.userCard, { backgroundColor: colors.card }]}>
-        <View style={styles.avatarContainer}>
-          {avatarUrl ? (
-            <Image
-              source={{ uri: avatarUrl }}
-              style={styles.avatarImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: '#374151' }]}>
-              <FontAwesome name="user" size={40} color="#fff" />
-            </View>
-          )}
-        </View>
+        <Pressable
+          style={styles.avatarWrapper}
+          onPress={showAvatarOptions}
+          disabled={savingAvatar}
+        >
+          <View style={styles.avatarContainer}>
+            {savingAvatar ? (
+              <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: '#374151' }]}>
+                <ActivityIndicator size="large" color="#fff" />
+              </View>
+            ) : avatarUrl ? (
+              <Image
+                source={{ uri: avatarUrl }}
+                style={styles.avatarImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: '#374151' }]}>
+                <FontAwesome name="user" size={40} color="#fff" />
+              </View>
+            )}
+          </View>
+          <View style={styles.avatarEditBadge}>
+            <FontAwesome name="camera" size={12} color="#fff" />
+          </View>
+        </Pressable>
         <Text style={[styles.userName, { color: colors.text }]}>
           {profile?.username || 'Battle Brother'}
         </Text>
@@ -361,6 +592,48 @@ export default function ProfileScreen() {
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SETTINGS</Text>
         </View>
 
+        {/* Theme Selector */}
+        <View style={[styles.themeRow, { backgroundColor: colors.card }]}>
+          <View style={styles.settingLeft}>
+            <View style={[styles.settingIcon, { backgroundColor: '#6366f1' }]}>
+              <FontAwesome name={isDarkMode ? 'moon-o' : 'sun-o'} size={16} color="#fff" />
+            </View>
+            <Text style={[styles.settingText, { color: colors.text }]}>Appearance</Text>
+          </View>
+          <View style={styles.themeButtons}>
+            <Pressable
+              style={[
+                styles.themeButton,
+                themeMode === 'light' && styles.themeButtonActive,
+                { borderColor: colors.border }
+              ]}
+              onPress={() => setThemeMode('light')}
+            >
+              <FontAwesome name="sun-o" size={14} color={themeMode === 'light' ? '#fff' : colors.textSecondary} />
+            </Pressable>
+            <Pressable
+              style={[
+                styles.themeButton,
+                themeMode === 'dark' && styles.themeButtonActive,
+                { borderColor: colors.border }
+              ]}
+              onPress={() => setThemeMode('dark')}
+            >
+              <FontAwesome name="moon-o" size={14} color={themeMode === 'dark' ? '#fff' : colors.textSecondary} />
+            </Pressable>
+            <Pressable
+              style={[
+                styles.themeButton,
+                themeMode === 'system' && styles.themeButtonActive,
+                { borderColor: colors.border }
+              ]}
+              onPress={() => setThemeMode('system')}
+            >
+              <FontAwesome name="mobile" size={14} color={themeMode === 'system' ? '#fff' : colors.textSecondary} />
+            </Pressable>
+          </View>
+        </View>
+
         {/* Notifications Toggle */}
         <View style={[styles.settingRow, { backgroundColor: colors.card }]}>
           <View style={styles.settingLeft}>
@@ -372,7 +645,7 @@ export default function ProfileScreen() {
           <Switch
             value={notificationsEnabled}
             onValueChange={setNotificationsEnabled}
-            trackColor={{ false: colors.border, true: '#374151' }}
+            trackColor={{ false: '#ef4444', true: '#10b981' }}
             thumbColor="#fff"
           />
         </View>
@@ -410,14 +683,22 @@ export default function ProfileScreen() {
           <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
         </Pressable>
 
-        <Pressable style={[styles.menuRow, { backgroundColor: colors.card }]}>
+        <Pressable
+          style={[styles.menuRow, { backgroundColor: colors.card }]}
+          onPress={showExportOptions}
+          disabled={exporting}
+        >
           <View style={styles.settingLeft}>
             <View style={[styles.settingIcon, { backgroundColor: '#0891b2' }]}>
               <FontAwesome name="download" size={16} color="#fff" />
             </View>
             <Text style={[styles.settingText, { color: colors.text }]}>Export Data</Text>
           </View>
-          <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
+          {exporting ? (
+            <ActivityIndicator size="small" color={colors.textSecondary} />
+          ) : (
+            <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
+          )}
         </Pressable>
       </View>
 
@@ -427,22 +708,15 @@ export default function ProfileScreen() {
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SUPPORT</Text>
         </View>
 
-        <Pressable style={[styles.menuRow, { backgroundColor: colors.card }]}>
+        <Pressable
+          style={[styles.menuRow, { backgroundColor: colors.card }]}
+          onPress={() => router.push('/profile/help-feedback')}
+        >
           <View style={styles.settingLeft}>
             <View style={[styles.settingIcon, { backgroundColor: '#6b7280' }]}>
               <FontAwesome name="question-circle" size={16} color="#fff" />
             </View>
-            <Text style={[styles.settingText, { color: colors.text }]}>Help & FAQ</Text>
-          </View>
-          <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
-        </Pressable>
-
-        <Pressable style={[styles.menuRow, { backgroundColor: colors.card }]}>
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: '#6b7280' }]}>
-              <FontAwesome name="info-circle" size={16} color="#fff" />
-            </View>
-            <Text style={[styles.settingText, { color: colors.text }]}>About</Text>
+            <Text style={[styles.settingText, { color: colors.text }]}>Help & Feedback</Text>
           </View>
           <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
         </Pressable>
@@ -496,13 +770,28 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: 'center',
   },
-  avatarContainer: {
+  avatarWrapper: {
     position: 'relative',
     marginBottom: 16,
+  },
+  avatarContainer: {
     width: 100,
     height: 100,
     borderRadius: 50,
     overflow: 'hidden',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#991b1b',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   avatar: {
     width: 100,
@@ -578,6 +867,30 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 12,
     marginBottom: 8,
+  },
+  themeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  themeButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  themeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  themeButtonActive: {
+    backgroundColor: '#991b1b',
+    borderColor: '#991b1b',
   },
   menuRow: {
     flexDirection: 'row',

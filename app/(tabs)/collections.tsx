@@ -1,5 +1,5 @@
-import { StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator, TextInput, Modal, RefreshControl, Image, ActionSheetIOS, Platform, Alert } from 'react-native';
-import { Text, View } from '@/components/Themed';
+import { StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator, TextInput, Modal, RefreshControl, Image, ActionSheetIOS, Platform, Alert, View } from 'react-native';
+import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
@@ -10,6 +10,9 @@ import { useTheme } from '@/lib/theme';
 import { useCollections } from '@/hooks/useCollections';
 import { supabase } from '@/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
+import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Collection, Item } from '@/types/database';
 const GAME_LIST = [
   'Battle Tech',
   'Bolt Action',
@@ -52,10 +55,17 @@ export default function CollectionsScreen() {
 
   const colors = isDarkMode ? Colors.dark : Colors.light;
   const { user } = useAuth();
-  const { collections, loading, createCollection, updateCollection, refresh } = useCollections(user?.id);
+  const { collections, loading, createCollection, updateCollection, refresh, reorderCollections } = useCollections(user?.id);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [coverImageUrls, setCoverImageUrls] = useState<Record<string, string>>({});
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<(Item & { collectionName: string })[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showCollectionPicker, setShowCollectionPicker] = useState(false);
+  const [selectedItemCollections, setSelectedItemCollections] = useState<{ item: Item; collections: Collection[] }| null>(null);
 
   // Fetch item counts for each collection
   const fetchCounts = useCallback(async () => {
@@ -104,6 +114,85 @@ export default function CollectionsScreen() {
       refresh();
     }, [])
   );
+
+  // Search for items by name
+  const searchItems = useCallback(async (query: string) => {
+    if (!query.trim() || !user?.id) {
+      setSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+
+    try {
+      const { data: items, error } = await supabase
+        .from('items')
+        .select('*')
+        .eq('user_id', user.id)
+        .ilike('name', `%${query.trim()}%`)
+        .limit(20);
+
+      if (error) {
+        console.error('Search error:', error);
+        setSearchResults([]);
+        return;
+      }
+
+      // Add collection names to results
+      const resultsWithCollections = (items || []).map((item: Item) => {
+        const collection = collections.find(c => c.id === item.collection_id);
+        return {
+          ...item,
+          collectionName: collection?.description || collection?.name || 'Unknown Collection',
+        };
+      });
+
+      setSearchResults(resultsWithCollections);
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [user?.id, collections]);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      searchItems(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, searchItems]);
+
+  // Handle search result tap
+  const handleSearchResultTap = (item: Item & { collectionName: string }) => {
+    // Find all collections that have an item with this exact name
+    const matchingItems = searchResults.filter(r => r.name === item.name);
+
+    if (matchingItems.length > 1) {
+      // Item exists in multiple collections - show picker
+      const uniqueCollectionIds = [...new Set(matchingItems.map(i => i.collection_id))];
+      const matchingCollections = collections.filter(c => uniqueCollectionIds.includes(c.id));
+
+      if (matchingCollections.length > 1) {
+        setSelectedItemCollections({ item, collections: matchingCollections });
+        setShowCollectionPicker(true);
+        return;
+      }
+    }
+
+    // Single collection - navigate directly
+    setSearchQuery('');
+    setSearchResults([]);
+    router.push(`/collection/${item.collection_id}`);
+  };
+
+  // Clear search
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+  };
 
   const pickImage = async (useCamera: boolean) => {
     if (useCamera) {
@@ -262,19 +351,113 @@ export default function CollectionsScreen() {
     return COLLECTION_COLORS[index % COLLECTION_COLORS.length];
   };
 
+  const renderCollectionItem = useCallback(({ item, drag, isActive, getIndex }: RenderItemParams<Collection>) => {
+    const index = getIndex() ?? 0;
+    return (
+      <ScaleDecorator>
+        <Pressable
+          style={[
+            styles.listCard,
+            { backgroundColor: colors.card },
+            isActive && styles.cardDragging,
+          ]}
+          onPress={() => router.push(`/collection/${item.id}`)}
+          onLongPress={drag}
+          delayLongPress={200}
+        >
+          {/* Cover Image or Color Icon */}
+          <View style={styles.listCardImage}>
+            {coverImageUrls[item.id] ? (
+              <Image
+                source={{ uri: coverImageUrls[item.id] }}
+                style={styles.listCardImageContent}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[styles.listCardImagePlaceholder, { backgroundColor: getCollectionColor(index) }]}>
+                <FontAwesome name="folder" size={24} color="rgba(255,255,255,0.9)" />
+              </View>
+            )}
+          </View>
+
+          {/* Card Content */}
+          <View style={styles.listCardContent}>
+            <View style={styles.listCardHeader}>
+              <Text style={[styles.listCardTitle, { color: colors.text }]} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <View style={styles.listCardBadges}>
+                {item.is_complete && (
+                  <View style={[styles.statusBadge, { backgroundColor: '#10b981' }]}>
+                    <FontAwesome name="check" size={10} color="#fff" />
+                  </View>
+                )}
+                {item.is_locked && (
+                  <View style={[styles.statusBadge, { backgroundColor: '#6b7280' }]}>
+                    <FontAwesome name="lock" size={10} color="#fff" />
+                  </View>
+                )}
+              </View>
+            </View>
+            <Text style={[styles.listCardDescription, { color: colors.textSecondary }]} numberOfLines={1}>
+              {item.description || 'No description'}
+            </Text>
+            <View style={styles.listCardFooter}>
+              <View style={styles.itemCount}>
+                <FontAwesome name="cube" size={12} color={colors.textSecondary} />
+                <Text style={[styles.itemCountText, { color: colors.textSecondary }]}>
+                  {itemCounts[item.id] ?? 0} items
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Drag Handle */}
+          <View style={styles.dragHandle}>
+            <FontAwesome name="bars" size={16} color={colors.textSecondary} />
+          </View>
+        </Pressable>
+      </ScaleDecorator>
+    );
+  }, [colors, coverImageUrls, itemCounts, getCollectionColor]);
+
+  const ListHeader = () => (
+    <>
+      {/* Add New Collection Button */}
+      {searchQuery.length === 0 && (
+        <Pressable
+          style={[styles.addButton, { borderColor: colors.border, backgroundColor: hasBackground ? colors.card : 'transparent' }]}
+          onPress={() => setShowModal(true)}
+        >
+          <FontAwesome name="plus" size={20} color={colors.textSecondary} />
+          <Text style={[styles.addButtonText, { color: colors.textSecondary }]}>
+            New Collection
+          </Text>
+        </Pressable>
+      )}
+
+      {/* Drag hint */}
+      {collections.length > 1 && searchQuery.length === 0 && (
+        <Text style={[styles.dragHint, { color: colors.textSecondary }]}>
+          Long press and drag to reorder
+        </Text>
+      )}
+    </>
+  );
+
+  const ListEmpty = () => (
+    <View style={[styles.emptyState, hasBackground && { backgroundColor: colors.card, marginHorizontal: 24, borderRadius: 12, paddingVertical: 40 }]}>
+      <FontAwesome name="folder-open-o" size={48} color={colors.textSecondary} />
+      <Text style={[styles.emptyTitle, { color: colors.text }]}>No collections yet</Text>
+      <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+        Create your first collection to organize your miniatures
+      </Text>
+    </View>
+  );
+
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={colors.textSecondary}
-        />
-      }
-    >
-      {/* Header */}
+    <GestureHandlerRootView style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}>
+      {/* Fixed Header with Search */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <View style={[styles.headerTitleArea, hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }]}>
@@ -294,71 +477,153 @@ export default function CollectionsScreen() {
         </View>
       </View>
 
-      {/* Add New Collection Button */}
-      <Pressable
-        style={[styles.addButton, { borderColor: colors.border, backgroundColor: hasBackground ? colors.card : 'transparent' }]}
-        onPress={() => setShowModal(true)}
-      >
-        <FontAwesome name="plus" size={20} color={colors.textSecondary} />
-        <Text style={[styles.addButtonText, { color: colors.textSecondary }]}>
-          New Collection
-        </Text>
-      </Pressable>
+      {/* Search Bar */}
+      <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
+        <FontAwesome name="search" size={16} color={colors.textSecondary} />
+        <TextInput
+          style={[styles.searchInput, { color: colors.text }]}
+          placeholder="Search items..."
+          placeholderTextColor={colors.textSecondary}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {searchQuery.length > 0 && (
+          <Pressable onPress={clearSearch} style={styles.clearButton}>
+            <FontAwesome name="times-circle" size={16} color={colors.textSecondary} />
+          </Pressable>
+        )}
+      </View>
 
-      {/* Collections Grid */}
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} />
-      ) : collections.length === 0 ? (
-        <View style={[styles.emptyState, hasBackground && { backgroundColor: colors.card, marginHorizontal: 24, borderRadius: 12, paddingVertical: 40 }]}>
-          <FontAwesome name="folder-open-o" size={48} color={colors.textSecondary} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No collections yet</Text>
-          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Create your first collection to organize your miniatures
-          </Text>
-        </View>
-      ) : (
-        <View style={styles.grid}>
-          {collections.map((collection, index) => (
-            <Pressable
-              key={collection.id}
-              style={[styles.card, { backgroundColor: colors.card }]}
-              onPress={() => router.push(`/collection/${collection.id}`)}
+      {/* Search Results */}
+      {searchQuery.length > 0 && (
+        <View style={[styles.searchResults, { backgroundColor: colors.card }]}>
+          {isSearching ? (
+            <View style={styles.searchLoading}>
+              <ActivityIndicator size="small" color={colors.textSecondary} />
+              <Text style={[styles.searchLoadingText, { color: colors.textSecondary }]}>Searching...</Text>
+            </View>
+          ) : searchResults.length === 0 ? (
+            <View style={styles.searchEmpty}>
+              <FontAwesome name="search" size={20} color={colors.textSecondary} />
+              <Text style={[styles.searchEmptyText, { color: colors.textSecondary }]}>
+                No items found for "{searchQuery}"
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.searchResultsList}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
             >
-              {/* Cover Image or Color Banner */}
-              {coverImageUrls[collection.id] ? (
-                <Image
-                  source={{ uri: coverImageUrls[collection.id] }}
-                  style={[styles.cardBannerImage, { backgroundColor: colors.card }]}
-                  resizeMode="contain"
-                />
-              ) : (
-                <View style={[styles.cardBanner, { backgroundColor: getCollectionColor(index) }]}>
-                  <FontAwesome name="folder" size={32} color="rgba(255,255,255,0.9)" />
-                </View>
-              )}
-
-              {/* Card Content */}
-              <View style={styles.cardContent}>
-                <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={1}>
-                  {collection.name}
-                </Text>
-                <Text style={[styles.cardGame, { color: colors.textSecondary }]} numberOfLines={1}>
-                  {collection.description || 'No description'}
-                </Text>
-                <View style={styles.cardFooter}>
-                  <View style={styles.itemCount}>
-                    <FontAwesome name="cube" size={12} color={colors.textSecondary} />
-                    <Text style={[styles.itemCountText, { color: colors.textSecondary }]}>
-                      {itemCounts[collection.id] ?? 0} items
+              {searchResults.map((item) => (
+                <Pressable
+                  key={item.id}
+                  style={[styles.searchResultItem, { borderBottomColor: colors.border }]}
+                  onPress={() => handleSearchResultTap(item)}
+                >
+                  <View style={styles.searchResultContent}>
+                    <Text style={[styles.searchResultName, { color: colors.text }]} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    <Text style={[styles.searchResultCollection, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {item.collectionName}
                     </Text>
                   </View>
                   <FontAwesome name="chevron-right" size={12} color={colors.textSecondary} />
-                </View>
-              </View>
-            </Pressable>
-          ))}
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
         </View>
       )}
+
+      {/* Collections List */}
+      {loading ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: 120 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.textSecondary}
+            />
+          }
+        >
+          <ListHeader />
+          <ActivityIndicator style={{ marginTop: 40 }} />
+        </ScrollView>
+      ) : (
+        <DraggableFlatList
+          data={collections}
+          keyExtractor={(item) => item.id}
+          renderItem={renderCollectionItem}
+          onDragEnd={({ data }) => reorderCollections(data)}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={ListEmpty}
+          containerStyle={{ flex: 1 }}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.textSecondary}
+            />
+          }
+        />
+      )}
+
+      {/* Collection Picker Modal (for items in multiple collections) */}
+      <Modal
+        visible={showCollectionPicker}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowCollectionPicker(false)}
+      >
+        <View style={styles.pickerModalOverlay}>
+          <View style={[styles.pickerModalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.pickerModalHeader}>
+              <Text style={[styles.pickerModalTitle, { color: colors.text }]}>
+                Select Collection
+              </Text>
+              <Pressable onPress={() => setShowCollectionPicker(false)}>
+                <FontAwesome name="times" size={20} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+            <Text style={[styles.pickerModalSubtitle, { color: colors.textSecondary }]}>
+              "{selectedItemCollections?.item.name}" exists in multiple collections
+            </Text>
+            <ScrollView style={styles.pickerList}>
+              {selectedItemCollections?.collections.map((collection) => (
+                <Pressable
+                  key={collection.id}
+                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
+                  onPress={() => {
+                    setShowCollectionPicker(false);
+                    setSearchQuery('');
+                    setSearchResults([]);
+                    router.push(`/collection/${collection.id}`);
+                  }}
+                >
+                  <View style={styles.pickerItemContent}>
+                    <Text style={[styles.pickerItemName, { color: colors.text }]}>
+                      {collection.description || collection.name}
+                    </Text>
+                    <Text style={[styles.pickerItemGame, { color: colors.textSecondary }]}>
+                      {collection.name}
+                    </Text>
+                  </View>
+                  <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Create Collection Modal */}
       <Modal
@@ -478,7 +743,7 @@ export default function CollectionsScreen() {
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -534,18 +799,90 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  grid: {
+  dragHint: {
+    textAlign: 'center',
+    fontSize: 12,
+    marginTop: 12,
+    marginBottom: 8,
+    fontStyle: 'italic',
+  },
+  listContent: {
+    flexGrow: 1,
+    paddingBottom: 120,
+  },
+  listCard: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    gap: 12,
-    backgroundColor: 'transparent',
+    alignItems: 'center',
+    marginHorizontal: 24,
+    marginTop: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    padding: 12,
+  },
+  listCardImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  listCardImageContent: {
+    width: '100%',
+    height: '100%',
+  },
+  listCardImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listCardContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  listCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  listCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+  listCardBadges: {
+    flexDirection: 'row',
+    gap: 4,
+    marginLeft: 8,
+  },
+  listCardDescription: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  listCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  dragHandle: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  cardDragging: {
+    opacity: 0.95,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+    transform: [{ scale: 1.02 }],
   },
   card: {
     width: CARD_WIDTH,
     borderRadius: 16,
     overflow: 'hidden',
+  },
+  cardBannerWrapper: {
+    position: 'relative',
   },
   cardBanner: {
     height: 120,
@@ -555,6 +892,20 @@ const styles = StyleSheet.create({
   cardBannerImage: {
     width: '100%',
     height: 120,
+  },
+  statusBadges: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    gap: 4,
+  },
+  statusBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardContent: {
     padding: 12,
@@ -710,5 +1061,120 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     fontSize: 14,
     fontWeight: '500',
+  },
+  // Search styles
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 24,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    padding: 0,
+  },
+  clearButton: {
+    padding: 4,
+  },
+  searchResults: {
+    marginHorizontal: 24,
+    marginBottom: 12,
+    borderRadius: 12,
+    maxHeight: 300,
+    overflow: 'hidden',
+  },
+  searchResultsList: {
+    maxHeight: 300,
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderBottomWidth: 1,
+  },
+  searchResultContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  searchResultName: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  searchResultCollection: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  searchLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    gap: 10,
+  },
+  searchLoadingText: {
+    fontSize: 14,
+  },
+  searchEmpty: {
+    alignItems: 'center',
+    padding: 24,
+    gap: 8,
+  },
+  searchEmptyText: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  // Collection Picker Modal styles
+  pickerModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  pickerModalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '60%',
+  },
+  pickerModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  pickerModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  pickerModalSubtitle: {
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  pickerList: {
+    maxHeight: 300,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  pickerItemContent: {
+    flex: 1,
+    marginRight: 12,
+  },
+  pickerItemName: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  pickerItemGame: {
+    fontSize: 13,
+    marginTop: 2,
   },
 });

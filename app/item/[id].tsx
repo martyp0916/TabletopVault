@@ -5,6 +5,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useState, useEffect, useCallback } from 'react';
 import { useItem } from '@/hooks/useItems';
+import { useCollection } from '@/hooks/useCollections';
 import { useTheme } from '@/lib/theme';
 import { supabase } from '@/lib/supabase';
 import { GAME_COLORS, STATUS_LABELS, GAME_SYSTEM_LABELS, GameSystem, ItemStatus, getEffectiveStatus } from '@/types/database';
@@ -29,6 +30,10 @@ export default function ItemDetailScreen() {
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { item, loading, error, refresh: refreshItem } = useItem(id as string);
+
+  // Fetch the parent collection to check lock status
+  const { collection } = useCollection(item?.collection_id);
+  const isCollectionLocked = collection?.is_locked ?? false;
 
   // Fetch all item photos
   const fetchPhotos = useCallback(async () => {
@@ -88,6 +93,11 @@ export default function ItemDetailScreen() {
   }, [refreshItem, fetchPhotos]);
 
   const handleDelete = () => {
+    if (isCollectionLocked) {
+      Alert.alert('Collection Locked', 'This item is in a locked collection. Unlock the collection first to delete items.');
+      return;
+    }
+
     Alert.alert(
       'Delete Item',
       'Are you sure you want to delete this item? This cannot be undone.',
@@ -345,13 +355,6 @@ export default function ItemDetailScreen() {
           </View>
 
           <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Purchase Date</Text>
-            <Text style={[styles.detailValue, { color: colors.text }]}>
-              {item.purchase_date || 'Not set'}
-            </Text>
-          </View>
-
-          <View style={[styles.detailRow, { borderBottomColor: colors.border }]}>
             <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Added</Text>
             <Text style={[styles.detailValue, { color: colors.text }]}>
               {new Date(item.created_at).toLocaleDateString()}
@@ -377,16 +380,28 @@ export default function ItemDetailScreen() {
             <Text style={styles.editButtonText}>Edit</Text>
           </Pressable>
           <Pressable
-            style={[styles.deleteButton, { borderColor: '#ef4444' }]}
+            style={[
+              styles.deleteButton,
+              { borderColor: isCollectionLocked ? colors.border : '#ef4444' },
+            ]}
             onPress={handleDelete}
-            disabled={deleting}
+            disabled={deleting || isCollectionLocked}
           >
             {deleting ? (
               <ActivityIndicator color="#ef4444" />
             ) : (
               <>
-                <FontAwesome name="trash" size={16} color="#ef4444" />
-                <Text style={styles.deleteButtonText}>Delete</Text>
+                <FontAwesome
+                  name={isCollectionLocked ? 'lock' : 'trash'}
+                  size={16}
+                  color={isCollectionLocked ? colors.textSecondary : '#ef4444'}
+                />
+                <Text style={[
+                  styles.deleteButtonText,
+                  { color: isCollectionLocked ? colors.textSecondary : '#ef4444' },
+                ]}>
+                  {isCollectionLocked ? 'Locked' : 'Delete'}
+                </Text>
               </>
             )}
           </Pressable>
@@ -650,6 +665,5 @@ const styles = StyleSheet.create({
   deleteButtonText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#ef4444',
   },
 });

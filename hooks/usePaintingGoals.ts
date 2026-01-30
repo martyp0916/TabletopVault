@@ -210,6 +210,95 @@ export function usePaintingGoals(userId: string | undefined) {
   };
 
   /**
+   * Update a goal's details (title, target, deadline, current progress)
+   */
+  const updateGoal = async (
+    goalId: string,
+    updates: {
+      title?: string;
+      targetCount?: number;
+      currentCount?: number;
+      deadline?: string | null;
+    }
+  ) => {
+    // Validate goalId
+    const idValidation = validateUUID(goalId);
+    if (!idValidation.isValid) {
+      return { error: new Error('Invalid goal ID') };
+    }
+
+    // Validate title if provided
+    if (updates.title !== undefined) {
+      const trimmedTitle = updates.title.trim();
+      if (!trimmedTitle) {
+        return { error: new Error('Goal title is required') };
+      }
+      if (trimmedTitle.length > GOAL_TITLE_MAX_LENGTH) {
+        return { error: new Error(`Title must be ${GOAL_TITLE_MAX_LENGTH} characters or less`) };
+      }
+    }
+
+    // Validate target count if provided
+    if (updates.targetCount !== undefined) {
+      if (!Number.isInteger(updates.targetCount) || updates.targetCount < 1 || updates.targetCount > GOAL_TARGET_MAX) {
+        return { error: new Error(`Target must be between 1 and ${GOAL_TARGET_MAX}`) };
+      }
+    }
+
+    // Validate current count if provided
+    if (updates.currentCount !== undefined) {
+      if (!Number.isInteger(updates.currentCount) || updates.currentCount < 0 || updates.currentCount > GOAL_TARGET_MAX) {
+        return { error: new Error(`Progress must be between 0 and ${GOAL_TARGET_MAX}`) };
+      }
+    }
+
+    // Validate deadline if provided
+    if (updates.deadline) {
+      const deadlineDate = new Date(updates.deadline);
+      if (isNaN(deadlineDate.getTime())) {
+        return { error: new Error('Invalid deadline date') };
+      }
+    }
+
+    // Rate limit
+    const rateLimitKey = getRateLimitKey('data:update', goalId);
+    const rateLimitResult = rateLimiter.check(rateLimitKey, 'data:update');
+    if (!rateLimitResult.allowed) {
+      return { error: new Error(rateLimitResult.error || 'Too many requests') };
+    }
+
+    const updateData: any = {};
+    if (updates.title !== undefined) updateData.title = updates.title.trim();
+    if (updates.targetCount !== undefined) updateData.target_count = updates.targetCount;
+    if (updates.currentCount !== undefined) updateData.current_count = updates.currentCount;
+    if (updates.deadline !== undefined) updateData.deadline = updates.deadline;
+
+    // Check if goal should be auto-completed
+    const goal = goals.find(g => g.id === goalId);
+    const newTarget = updates.targetCount ?? goal?.target_count ?? 0;
+    const newCurrent = updates.currentCount ?? goal?.current_count ?? 0;
+    if (newCurrent >= newTarget && newTarget > 0) {
+      updateData.is_completed = true;
+    } else if (goal?.is_completed && newCurrent < newTarget) {
+      // Un-complete if progress drops below target
+      updateData.is_completed = false;
+    }
+
+    const { data, error } = await supabase
+      .from('painting_goals')
+      .update(updateData)
+      .eq('id', idValidation.sanitizedValue)
+      .select()
+      .single();
+
+    if (!error && data) {
+      setGoals(prev => prev.map(g => g.id === goalId ? data : g));
+    }
+
+    return { data, error };
+  };
+
+  /**
    * Delete a goal
    */
   const deleteGoal = async (goalId: string) => {
@@ -255,6 +344,7 @@ export function usePaintingGoals(userId: string | undefined) {
     error,
     refresh: fetchGoals,
     createGoal,
+    updateGoal,
     updateProgress,
     incrementProgress,
     completeGoal,

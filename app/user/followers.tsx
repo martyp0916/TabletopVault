@@ -38,7 +38,12 @@ export default function FollowersScreen() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setFollowers(data || []);
+      // Transform data: Supabase returns nested object, extract it
+      const transformed = (data || []).map((item: any) => ({
+        id: item.id,
+        follower: Array.isArray(item.follower) ? item.follower[0] : item.follower,
+      })).filter((item: any) => item.follower);
+      setFollowers(transformed);
     } catch (e) {
       console.error('Error fetching followers:', e);
     } finally {

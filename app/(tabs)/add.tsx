@@ -1,9 +1,9 @@
-import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform, KeyboardAvoidingView } from 'react-native';
-import { Text, View } from '@/components/Themed';
+import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform, KeyboardAvoidingView, View } from 'react-native';
+import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { useState, useEffect } from 'react';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
 import { useCollections } from '@/hooks/useCollections';
@@ -30,6 +30,7 @@ function getGameSystemFromName(name: string): GameSystem {
 }
 
 export default function AddScreen() {
+  const { collectionId } = useLocalSearchParams<{ collectionId?: string }>();
   const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
   const hasBackground = !!backgroundImageUrl;
@@ -144,12 +145,18 @@ export default function AddScreen() {
   };
 
 
-  // Auto-select first collection
+  // Auto-select collection: use passed collectionId if provided, otherwise default to first
   useEffect(() => {
-    if (collections.length > 0 && !selectedCollection) {
-      setSelectedCollection(collections[0].id);
+    if (collections.length > 0) {
+      if (collectionId && collections.some(c => c.id === collectionId)) {
+        // If coming from a collection page, always use that collection
+        setSelectedCollection(collectionId);
+      } else if (!selectedCollection) {
+        // If no collection selected yet, default to first
+        setSelectedCollection(collections[0].id);
+      }
     }
-  }, [collections]);
+  }, [collections, collectionId]);
 
   const resetForm = () => {
     setName('');
@@ -175,10 +182,16 @@ export default function AddScreen() {
       return;
     }
 
+    // Check if collection is locked
+    const selectedCol = collections.find(c => c.id === selectedCollection);
+    if (selectedCol?.is_locked) {
+      Alert.alert('Collection Locked', 'This collection is locked. Unlock it from the collection page to add items.');
+      return;
+    }
+
     setSaving(true);
 
-    // Derive game system from collection name
-    const selectedCol = collections.find(c => c.id === selectedCollection);
+    // Derive game system from collection name (selectedCol already defined above)
     const derivedGameSystem = getGameSystemFromName(selectedCol?.name || '');
 
     // Parse status counts
@@ -242,7 +255,7 @@ export default function AddScreen() {
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
     >
       <ScrollView
         style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}
@@ -316,19 +329,28 @@ export default function AddScreen() {
                 style={[styles.dropdown, { backgroundColor: colors.card, borderColor: colors.border }]}
                 onPress={() => setShowCollectionDropdown(!showCollectionDropdown)}
               >
-                <Text style={[
-                  styles.dropdownText,
-                  { color: selectedCollection ? colors.text : colors.textSecondary }
-                ]}>
-                  {selectedCollection
-                    ? (() => {
-                        const col = collections.find(c => c.id === selectedCollection);
-                        return col?.description
-                          ? `${col.description} (${col.name})`
-                          : col?.name;
-                      })()
-                    : 'Select a collection...'}
-                </Text>
+                <View style={styles.dropdownSelectedContent}>
+                  {(() => {
+                    const col = collections.find(c => c.id === selectedCollection);
+                    return (
+                      <>
+                        {col?.is_locked && (
+                          <FontAwesome name="lock" size={12} color={colors.textSecondary} style={{ marginRight: 8 }} />
+                        )}
+                        <Text style={[
+                          styles.dropdownText,
+                          { color: col?.is_locked ? colors.textSecondary : (selectedCollection ? colors.text : colors.textSecondary) }
+                        ]}>
+                          {selectedCollection
+                            ? (col?.description
+                                ? `${col.description} (${col.name})`
+                                : col?.name)
+                            : 'Select a collection...'}
+                        </Text>
+                      </>
+                    );
+                  })()}
+                </View>
                 <FontAwesome
                   name={showCollectionDropdown ? 'chevron-up' : 'chevron-down'}
                   size={14}
@@ -348,17 +370,26 @@ export default function AddScreen() {
                           { borderBottomColor: colors.border }
                         ]}
                         onPress={() => {
+                          if (col.is_locked) {
+                            Alert.alert('Collection Locked', 'This collection is locked. Unlock it from the collection page to add items.');
+                            return;
+                          }
                           setSelectedCollection(col.id);
                           setShowCollectionDropdown(false);
                         }}
                       >
-                        <Text style={[
-                          styles.dropdownItemText,
-                          { color: selectedCollection === col.id ? '#991b1b' : colors.text }
-                        ]}>
-                          {col.description ? `${col.description} (${col.name})` : col.name}
-                        </Text>
-                        {selectedCollection === col.id && (
+                        <View style={styles.dropdownItemContent}>
+                          {col.is_locked && (
+                            <FontAwesome name="lock" size={12} color={colors.textSecondary} style={{ marginRight: 8 }} />
+                          )}
+                          <Text style={[
+                            styles.dropdownItemText,
+                            { color: col.is_locked ? colors.textSecondary : (selectedCollection === col.id ? '#991b1b' : colors.text) }
+                          ]}>
+                            {col.description ? `${col.description} (${col.name})` : col.name}
+                          </Text>
+                        </View>
+                        {selectedCollection === col.id && !col.is_locked && (
                           <FontAwesome name="check" size={14} color="#991b1b" />
                         )}
                       </Pressable>
@@ -525,7 +556,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 200,
   },
   header: {
     padding: 24,
@@ -709,6 +740,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderWidth: 1,
   },
+  dropdownSelectedContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   dropdownText: {
     fontSize: 16,
   },
@@ -731,6 +767,11 @@ const styles = StyleSheet.create({
   },
   dropdownItemSelected: {
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  dropdownItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   dropdownItemText: {
     fontSize: 16,

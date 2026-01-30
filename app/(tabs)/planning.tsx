@@ -10,8 +10,22 @@ import { useTheme } from '@/lib/theme';
 import { usePaintingGoals } from '@/hooks/usePaintingGoals';
 import { useProgressStats } from '@/hooks/useProgressStats';
 import { useItems } from '@/hooks/useItems';
-import { STATUS_COLORS, getEffectiveStatus, GoalType, Item } from '@/types/database';
+import { useWishlist } from '@/hooks/useWishlist';
+import { STATUS_COLORS, getEffectiveStatus, GoalType, Item, WishlistItem } from '@/types/database';
 import DateTimePicker from '@react-native-community/datetimepicker';
+
+const GAME_LIST = [
+  'Battle Tech',
+  'Bolt Action',
+  'Halo Flashpoint',
+  'Horus Heresy',
+  'Marvel Crisis Protocol',
+  'Star Wars Legion',
+  'Star Wars Shatterpoint',
+  'Warhammer 40K',
+  'Warhammer 40K: Kill Team',
+  'Warhammer Age of Sigmar',
+];
 
 export default function PlanningScreen() {
   const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
@@ -19,30 +33,41 @@ export default function PlanningScreen() {
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user } = useAuth();
-  const { goals, activeGoals, loading: goalsLoading, createGoal, updateProgress, deleteGoal, refresh: refreshGoals } = usePaintingGoals(user?.id);
-  const { overallProgress, collectionProgress, loading: progressLoading, refresh: refreshProgress } = useProgressStats(user?.id);
+  const { goals, activeGoals, loading: goalsLoading, createGoal, updateGoal, updateProgress, deleteGoal, refresh: refreshGoals } = usePaintingGoals(user?.id);
+  const { overallProgress, gameSystemProgress, loading: progressLoading, refresh: refreshProgress } = useProgressStats(user?.id);
   const { items, loading: itemsLoading, refresh: refreshItems } = useItems(user?.id);
+  const { items: wishlistItems, activeItems: activeWishlistItems, loading: wishlistLoading, createItem: createWishlistItem, updateItem: updateWishlistItem, deleteItem: deleteWishlistItem, refresh: refreshWishlist } = useWishlist(user?.id);
 
   const [refreshing, setRefreshing] = useState(false);
 
   // Progress Queue modal state
   const [showQueueModal, setShowQueueModal] = useState(false);
 
-  // Add goal modal state
+  // Goal modal state
   const [showGoalModal, setShowGoalModal] = useState(false);
+  const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [goalTitle, setGoalTitle] = useState('');
   const [goalType, setGoalType] = useState<GoalType>('models_painted');
   const [goalTarget, setGoalTarget] = useState('');
+  const [goalCurrentProgress, setGoalCurrentProgress] = useState('');
   const [goalDeadline, setGoalDeadline] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  const loading = itemsLoading || goalsLoading || progressLoading;
+  // Wishlist modal state
+  const [showWishlistModal, setShowWishlistModal] = useState(false);
+  const [editingWishlistId, setEditingWishlistId] = useState<string | null>(null);
+  const [wishlistName, setWishlistName] = useState('');
+  const [wishlistGameSystem, setWishlistGameSystem] = useState('');
+  const [showGameDropdown, setShowGameDropdown] = useState(false);
+  const [wishlistNotes, setWishlistNotes] = useState('');
+
+  const loading = itemsLoading || goalsLoading || progressLoading || wishlistLoading;
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refreshItems(), refreshGoals(), refreshProgress()]);
+    await Promise.all([refreshItems(), refreshGoals(), refreshProgress(), refreshWishlist()]);
     setRefreshing(false);
-  }, [refreshItems, refreshGoals, refreshProgress]);
+  }, [refreshItems, refreshGoals, refreshProgress, refreshWishlist]);
 
   // Progress Queue: Auto-populate with items that have unpainted models (nib, assembled, or primed)
   const progressQueueItems = items.filter(item => {
@@ -57,8 +82,28 @@ export default function PlanningScreen() {
     return bScore - aScore;
   });
 
-  const handleCreateGoal = async () => {
+  const openNewGoalModal = () => {
+    setEditingGoalId(null);
+    setGoalTitle('');
+    setGoalTarget('');
+    setGoalCurrentProgress('');
+    setGoalDeadline(null);
+    setShowGoalModal(true);
+  };
+
+  const openEditGoalModal = (goal: typeof goals[0]) => {
+    setEditingGoalId(goal.id);
+    setGoalTitle(goal.title);
+    setGoalTarget(goal.target_count.toString());
+    setGoalCurrentProgress(goal.current_count.toString());
+    setGoalDeadline(goal.deadline ? new Date(goal.deadline) : null);
+    setShowGoalModal(true);
+  };
+
+  const handleSaveGoal = async () => {
     const target = parseInt(goalTarget, 10);
+    const currentProgress = parseInt(goalCurrentProgress, 10) || 0;
+
     if (!goalTitle.trim()) {
       Alert.alert('Error', 'Please enter a goal title');
       return;
@@ -67,35 +112,70 @@ export default function PlanningScreen() {
       Alert.alert('Error', 'Please enter a valid target number');
       return;
     }
+    if (currentProgress < 0) {
+      Alert.alert('Error', 'Progress cannot be negative');
+      return;
+    }
+    if (currentProgress > target) {
+      Alert.alert('Error', 'Progress cannot exceed target');
+      return;
+    }
 
-    const { error } = await createGoal(
-      goalTitle,
-      goalType,
-      target,
-      goalDeadline?.toISOString().split('T')[0]
-    );
+    if (editingGoalId) {
+      // Update existing goal
+      const { error } = await updateGoal(editingGoalId, {
+        title: goalTitle,
+        targetCount: target,
+        currentCount: currentProgress,
+        deadline: goalDeadline?.toISOString().split('T')[0] || null,
+      });
 
-    if (error) {
-      Alert.alert('Error', error.message);
+      if (error) {
+        Alert.alert('Error', error.message);
+      } else {
+        setShowGoalModal(false);
+        setEditingGoalId(null);
+        setGoalTitle('');
+        setGoalTarget('');
+        setGoalCurrentProgress('');
+        setGoalDeadline(null);
+      }
     } else {
-      setShowGoalModal(false);
-      setGoalTitle('');
-      setGoalTarget('');
-      setGoalDeadline(null);
+      // Create new goal
+      const { error } = await createGoal(
+        goalTitle,
+        goalType,
+        target,
+        goalDeadline?.toISOString().split('T')[0]
+      );
+
+      if (error) {
+        Alert.alert('Error', error.message);
+      } else {
+        setShowGoalModal(false);
+        setGoalTitle('');
+        setGoalTarget('');
+        setGoalCurrentProgress('');
+        setGoalDeadline(null);
+      }
     }
   };
 
-  const handleDeleteGoal = (goalId: string, title: string) => {
+  const handleGoalLongPress = (goal: typeof goals[0]) => {
     Alert.alert(
-      'Delete Goal',
-      `Delete "${title}"?`,
+      goal.title,
+      'What would you like to do?',
       [
         { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Edit',
+          onPress: () => openEditGoalModal(goal),
+        },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            const { error } = await deleteGoal(goalId);
+            const { error } = await deleteGoal(goal.id);
             if (error) Alert.alert('Error', error.message);
           },
         },
@@ -109,6 +189,89 @@ export default function PlanningScreen() {
     const isOverdue = date < now;
     const formatted = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     return { formatted, isOverdue };
+  };
+
+  const openNewWishlistModal = () => {
+    setEditingWishlistId(null);
+    setWishlistName('');
+    setWishlistGameSystem('');
+    setShowGameDropdown(false);
+    setWishlistNotes('');
+    setShowWishlistModal(true);
+  };
+
+  const openEditWishlistModal = (item: WishlistItem) => {
+    setEditingWishlistId(item.id);
+    setWishlistName(item.name);
+    setWishlistGameSystem(item.game_system || '');
+    setShowGameDropdown(false);
+    setWishlistNotes(item.notes || '');
+    setShowWishlistModal(true);
+  };
+
+  const handleSaveWishlist = async () => {
+    if (!wishlistName.trim()) {
+      Alert.alert('Error', 'Please enter an item name');
+      return;
+    }
+
+    if (editingWishlistId) {
+      // Update existing item
+      const { error } = await updateWishlistItem(editingWishlistId, {
+        name: wishlistName,
+        gameSystem: wishlistGameSystem || null,
+        notes: wishlistNotes || null,
+      });
+
+      if (error) {
+        Alert.alert('Error', error.message);
+      } else {
+        setShowWishlistModal(false);
+        setEditingWishlistId(null);
+      }
+    } else {
+      // Create new item
+      const { error } = await createWishlistItem(
+        wishlistName,
+        wishlistGameSystem || undefined,
+        wishlistNotes || undefined
+      );
+
+      if (error) {
+        Alert.alert('Error', error.message);
+      } else {
+        setShowWishlistModal(false);
+      }
+    }
+  };
+
+  const handleWishlistItemPress = (item: WishlistItem) => {
+    Alert.alert(
+      item.name,
+      'What would you like to do?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Edit',
+          onPress: () => openEditWishlistModal(item),
+        },
+        {
+          text: item.is_purchased ? 'Mark as Not Purchased' : 'Mark as Purchased',
+          onPress: async () => {
+            const { error } = await updateWishlistItem(item.id, { isPurchased: !item.is_purchased });
+            if (error) Alert.alert('Error', error.message);
+          },
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await deleteWishlistItem(item.id);
+            if (error) Alert.alert('Error', error.message);
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -268,7 +431,7 @@ export default function PlanningScreen() {
           </View>
           <Pressable
             style={styles.addButtonContainer}
-            onPress={() => setShowGoalModal(true)}
+            onPress={openNewGoalModal}
           >
             <FontAwesome name="plus" size={12} color="#fff" />
             <Text style={styles.addButtonText}>New</Text>
@@ -294,13 +457,12 @@ export default function PlanningScreen() {
               const deadlineInfo = goal.deadline ? formatDeadline(goal.deadline) : null;
 
               return (
-                <Pressable
+                <View
                   key={goal.id}
                   style={[
                     styles.goalItem,
                     index !== goals.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
                   ]}
-                  onLongPress={() => handleDeleteGoal(goal.id, goal.title)}
                 >
                   <View style={styles.goalHeader}>
                     <View style={styles.goalTitleRow}>
@@ -342,26 +504,59 @@ export default function PlanningScreen() {
                       ]}
                     />
                   </View>
-                  <Text style={[styles.goalProgressText, { color: colors.textSecondary }]}>
-                    {goal.current_count}/{goal.target_count}
-                    {goal.is_completed && ' - Complete!'}
-                  </Text>
-                </Pressable>
+                  <View style={styles.goalFooter}>
+                    <Text style={[styles.goalProgressText, { color: colors.textSecondary }]}>
+                      {goal.current_count}/{goal.target_count}
+                      {goal.is_completed && ' - Complete!'}
+                    </Text>
+                    <View style={styles.goalActions}>
+                      <Pressable
+                        style={[styles.goalEditButton, { backgroundColor: colors.background }]}
+                        onPress={() => openEditGoalModal(goal)}
+                      >
+                        <FontAwesome name="pencil" size={12} color={colors.textSecondary} />
+                        <Text style={[styles.goalEditText, { color: colors.textSecondary }]}>Edit</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.goalDeleteButton, { backgroundColor: colors.background }]}
+                        onPress={() => {
+                          Alert.alert(
+                            'Delete Goal',
+                            `Are you sure you want to delete "${goal.title}"?`,
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              {
+                                text: 'Delete',
+                                style: 'destructive',
+                                onPress: async () => {
+                                  const { error } = await deleteGoal(goal.id);
+                                  if (error) Alert.alert('Error', error.message);
+                                },
+                              },
+                            ]
+                          );
+                        }}
+                      >
+                        <FontAwesome name="trash" size={12} color="#ef4444" />
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
               );
             })}
           </View>
         )}
       </View>
 
-      {/* Collection Progress Section */}
+      {/* Game System Progress Section */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
           <View style={[styles.sectionLabelContainer, hasBackground && { backgroundColor: colors.card }]}>
-            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>COLLECTION PROGRESS</Text>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>GAME SYSTEM PROGRESS</Text>
           </View>
         </View>
 
-        {collectionProgress.length === 0 ? (
+        {gameSystemProgress.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
             <FontAwesome name="folder-open" size={24} color={colors.textSecondary} />
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
@@ -370,21 +565,20 @@ export default function PlanningScreen() {
           </View>
         ) : (
           <View style={[styles.collectionsContainer, { backgroundColor: colors.card }]}>
-            {collectionProgress.map((cp, index) => (
-              <Pressable
-                key={cp.collection.id}
+            {gameSystemProgress.map((gsp, index) => (
+              <View
+                key={gsp.gameSystem}
                 style={[
                   styles.collectionItem,
-                  index !== collectionProgress.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
+                  index !== gameSystemProgress.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
                 ]}
-                onPress={() => router.push(`/collection/${cp.collection.id}`)}
               >
                 <View style={styles.collectionHeader}>
                   <Text style={[styles.collectionName, { color: colors.text }]} numberOfLines={1}>
-                    {cp.collection.name}
+                    {gsp.gameSystem}
                   </Text>
-                  <Text style={[styles.collectionPercent, { color: cp.percentage === 100 ? '#10b981' : colors.textSecondary }]}>
-                    {cp.percentage}%
+                  <Text style={[styles.collectionPercent, { color: gsp.percentage === 100 ? '#10b981' : colors.textSecondary }]}>
+                    {gsp.percentage}%
                   </Text>
                 </View>
                 <View style={[styles.collectionProgressBg, { backgroundColor: colors.border }]}>
@@ -392,15 +586,81 @@ export default function PlanningScreen() {
                     style={[
                       styles.collectionProgressFill,
                       {
-                        width: `${cp.percentage}%`,
-                        backgroundColor: cp.percentage === 100 ? '#10b981' : '#991b1b',
+                        width: `${gsp.percentage}%`,
+                        backgroundColor: gsp.percentage === 100 ? '#10b981' : '#991b1b',
                       },
                     ]}
                   />
                 </View>
                 <Text style={[styles.collectionModels, { color: colors.textSecondary }]}>
-                  {cp.paintedModels}/{cp.totalModels} models
+                  {gsp.paintedModels}/{gsp.totalModels} models • {gsp.collectionCount} {gsp.collectionCount === 1 ? 'collection' : 'collections'}
                 </Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
+      {/* Wishlist Section */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <View style={[styles.sectionLabelContainer, hasBackground && { backgroundColor: colors.card }]}>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>WISHLIST</Text>
+          </View>
+          <Pressable
+            style={styles.addButtonContainer}
+            onPress={openNewWishlistModal}
+          >
+            <FontAwesome name="plus" size={12} color="#fff" />
+            <Text style={styles.addButtonText}>Add</Text>
+          </Pressable>
+        </View>
+
+        {activeWishlistItems.length === 0 ? (
+          <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
+            <FontAwesome name="gift" size={24} color={colors.textSecondary} />
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              No wishlist items yet
+            </Text>
+            <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
+              Add items you want to get in the future
+            </Text>
+          </View>
+        ) : (
+          <View style={[styles.wishlistContainer, { backgroundColor: colors.card }]}>
+            {wishlistItems.map((item, index) => (
+              <Pressable
+                key={item.id}
+                style={[
+                  styles.wishlistItem,
+                  index !== wishlistItems.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
+                ]}
+                onPress={() => handleWishlistItemPress(item)}
+              >
+                <View style={styles.wishlistItemLeft}>
+                  <FontAwesome
+                    name={item.is_purchased ? 'check-circle' : 'star'}
+                    size={16}
+                    color={item.is_purchased ? '#10b981' : '#f59e0b'}
+                  />
+                  <View style={styles.wishlistItemInfo}>
+                    <Text
+                      style={[
+                        styles.wishlistItemName,
+                        { color: colors.text },
+                        item.is_purchased && styles.wishlistItemPurchased,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.name}
+                    </Text>
+                    {item.game_system && (
+                      <Text style={[styles.wishlistItemGame, { color: colors.textSecondary }]}>
+                        {item.game_system}
+                      </Text>
+                    )}
+                  </View>
+                </View>
               </Pressable>
             ))}
           </View>
@@ -480,22 +740,33 @@ export default function PlanningScreen() {
         </View>
       </Modal>
 
-      {/* Add Goal Modal */}
+      {/* Goal Modal (Create/Edit) */}
       <Modal
         visible={showGoalModal}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setShowGoalModal(false)}
+        onRequestClose={() => {
+          setShowGoalModal(false);
+          setEditingGoalId(null);
+        }}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.modalOverlay}
         >
-          <Pressable style={styles.modalDismiss} onPress={() => setShowGoalModal(false)} />
+          <Pressable style={styles.modalDismiss} onPress={() => {
+            setShowGoalModal(false);
+            setEditingGoalId(null);
+          }} />
           <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>New Goal</Text>
-              <Pressable onPress={() => setShowGoalModal(false)}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                {editingGoalId ? 'Edit Goal' : 'New Goal'}
+              </Text>
+              <Pressable onPress={() => {
+                setShowGoalModal(false);
+                setEditingGoalId(null);
+              }}>
                 <FontAwesome name="times" size={20} color={colors.textSecondary} />
               </Pressable>
             </View>
@@ -520,6 +791,20 @@ export default function PlanningScreen() {
                 keyboardType="number-pad"
               />
 
+              {editingGoalId && (
+                <>
+                  <Text style={[styles.modalLabel, { color: colors.text }]}>Current Progress</Text>
+                  <TextInput
+                    style={[styles.textInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                    placeholder="e.g., 5"
+                    placeholderTextColor={colors.textSecondary}
+                    value={goalCurrentProgress}
+                    onChangeText={setGoalCurrentProgress}
+                    keyboardType="number-pad"
+                  />
+                </>
+              )}
+
               <Text style={[styles.modalLabel, { color: colors.text }]}>Deadline (optional)</Text>
               <Pressable
                 style={[styles.dateButton, { backgroundColor: colors.background, borderColor: colors.border }]}
@@ -538,24 +823,178 @@ export default function PlanningScreen() {
               </Pressable>
 
               {showDatePicker && (
-                <DateTimePicker
-                  value={goalDeadline || new Date()}
-                  mode="date"
-                  display="spinner"
-                  onChange={(event, date) => {
-                    setShowDatePicker(false);
-                    if (date) setGoalDeadline(date);
-                  }}
-                  minimumDate={new Date()}
-                />
+                <View style={styles.datePickerContainer}>
+                  <DateTimePicker
+                    value={goalDeadline || new Date()}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, date) => {
+                      if (Platform.OS === 'android') {
+                        setShowDatePicker(false);
+                      }
+                      if (date) setGoalDeadline(date);
+                    }}
+                    minimumDate={new Date()}
+                    style={styles.datePicker}
+                    textColor={colors.text}
+                  />
+                  {Platform.OS === 'ios' && (
+                    <Pressable
+                      style={styles.datePickerDoneButton}
+                      onPress={() => setShowDatePicker(false)}
+                    >
+                      <Text style={styles.datePickerDoneText}>Done</Text>
+                    </Pressable>
+                  )}
+                </View>
               )}
 
               <Pressable
                 style={[styles.modalButton, (!goalTitle.trim() || !goalTarget) && { opacity: 0.5 }]}
-                onPress={handleCreateGoal}
+                onPress={handleSaveGoal}
                 disabled={!goalTitle.trim() || !goalTarget}
               >
-                <Text style={styles.modalButtonText}>Create Goal</Text>
+                <Text style={styles.modalButtonText}>
+                  {editingGoalId ? 'Save Changes' : 'Create Goal'}
+                </Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Wishlist Modal (Create/Edit) */}
+      <Modal
+        visible={showWishlistModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => {
+          setShowWishlistModal(false);
+          setEditingWishlistId(null);
+        }}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <Pressable style={styles.modalDismiss} onPress={() => {
+            setShowWishlistModal(false);
+            setEditingWishlistId(null);
+          }} />
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                {editingWishlistId ? 'Edit Wishlist Item' : 'Add to Wishlist'}
+              </Text>
+              <Pressable onPress={() => {
+                setShowWishlistModal(false);
+                setEditingWishlistId(null);
+              }}>
+                <FontAwesome name="times" size={20} color={colors.textSecondary} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.modalLabel, { color: colors.text }]}>Item Name *</Text>
+              <TextInput
+                style={[styles.textInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="e.g., Space Marine Combat Patrol"
+                placeholderTextColor={colors.textSecondary}
+                value={wishlistName}
+                onChangeText={setWishlistName}
+              />
+
+              <Text style={[styles.modalLabel, { color: colors.text }]}>Game System</Text>
+              <View style={styles.dropdownContainer}>
+                <Pressable
+                  style={[styles.dropdown, { backgroundColor: colors.background, borderColor: colors.border }]}
+                  onPress={() => setShowGameDropdown(!showGameDropdown)}
+                >
+                  <Text style={[
+                    styles.dropdownText,
+                    { color: wishlistGameSystem ? colors.text : colors.textSecondary }
+                  ]}>
+                    {wishlistGameSystem || 'Select a game...'}
+                  </Text>
+                  <FontAwesome
+                    name={showGameDropdown ? 'chevron-up' : 'chevron-down'}
+                    size={14}
+                    color={colors.textSecondary}
+                  />
+                </Pressable>
+
+                {showGameDropdown && (
+                  <View style={[styles.dropdownList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <ScrollView style={styles.dropdownScroll} nestedScrollEnabled>
+                      <Pressable
+                        style={[
+                          styles.dropdownItem,
+                          !wishlistGameSystem && styles.dropdownItemSelected,
+                          { borderBottomColor: colors.border }
+                        ]}
+                        onPress={() => {
+                          setWishlistGameSystem('');
+                          setShowGameDropdown(false);
+                        }}
+                      >
+                        <Text style={[
+                          styles.dropdownItemText,
+                          { color: !wishlistGameSystem ? '#991b1b' : colors.textSecondary }
+                        ]}>
+                          None
+                        </Text>
+                        {!wishlistGameSystem && (
+                          <FontAwesome name="check" size={14} color="#991b1b" />
+                        )}
+                      </Pressable>
+                      {GAME_LIST.map((game) => (
+                        <Pressable
+                          key={game}
+                          style={[
+                            styles.dropdownItem,
+                            wishlistGameSystem === game && styles.dropdownItemSelected,
+                            { borderBottomColor: colors.border }
+                          ]}
+                          onPress={() => {
+                            setWishlistGameSystem(game);
+                            setShowGameDropdown(false);
+                          }}
+                        >
+                          <Text style={[
+                            styles.dropdownItemText,
+                            { color: wishlistGameSystem === game ? '#991b1b' : colors.text }
+                          ]}>
+                            {game}
+                          </Text>
+                          {wishlistGameSystem === game && (
+                            <FontAwesome name="check" size={14} color="#991b1b" />
+                          )}
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+
+              <Text style={[styles.modalLabel, { color: colors.text }]}>Notes</Text>
+              <TextInput
+                style={[styles.textInput, styles.textArea, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border }]}
+                placeholder="Any additional notes..."
+                placeholderTextColor={colors.textSecondary}
+                value={wishlistNotes}
+                onChangeText={setWishlistNotes}
+                multiline
+                numberOfLines={3}
+              />
+
+              <Pressable
+                style={[styles.modalButton, !wishlistName.trim() && { opacity: 0.5 }]}
+                onPress={handleSaveWishlist}
+                disabled={!wishlistName.trim()}
+              >
+                <Text style={styles.modalButtonText}>
+                  {editingWishlistId ? 'Save Changes' : 'Add to Wishlist'}
+                </Text>
               </Pressable>
             </ScrollView>
           </View>
@@ -789,7 +1228,36 @@ const styles = StyleSheet.create({
   },
   goalProgressText: {
     fontSize: 12,
-    marginTop: 6,
+  },
+  goalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  goalEditButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    gap: 4,
+  },
+  goalEditText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  goalActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  goalDeleteButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
   },
   collectionsContainer: {
     borderRadius: 12,
@@ -895,6 +1363,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 16,
   },
+  datePickerContainer: {
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  datePicker: {
+    height: 150,
+  },
+  datePickerDoneButton: {
+    backgroundColor: '#991b1b',
+    padding: 12,
+    alignItems: 'center',
+  },
+  datePickerDoneText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   modalButton: {
     backgroundColor: '#991b1b',
     padding: 16,
@@ -905,5 +1392,95 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+  },
+  textArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  wishlistContainer: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  wishlistSummary: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+    borderBottomWidth: 1,
+  },
+  wishlistSummaryText: {
+    fontSize: 13,
+  },
+  wishlistTotal: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  wishlistItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+  },
+  wishlistItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  wishlistItemInfo: {
+    flex: 1,
+  },
+  wishlistItemName: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  wishlistItemPurchased: {
+    textDecorationLine: 'line-through',
+    opacity: 0.7,
+  },
+  wishlistItemGame: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  dropdownContainer: {
+    marginBottom: 16,
+    zIndex: 1000,
+  },
+  dropdown: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  dropdownText: {
+    fontSize: 16,
+  },
+  dropdownList: {
+    position: 'absolute',
+    top: 56,
+    left: 0,
+    right: 0,
+    borderRadius: 12,
+    borderWidth: 1,
+    maxHeight: 200,
+    zIndex: 1001,
+  },
+  dropdownScroll: {
+    maxHeight: 200,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 14,
+    borderBottomWidth: 1,
+  },
+  dropdownItemSelected: {
+    backgroundColor: 'rgba(153, 27, 27, 0.1)',
+  },
+  dropdownItemText: {
+    fontSize: 16,
   },
 });

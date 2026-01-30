@@ -24,7 +24,10 @@ export interface Collection {
   name: string;
   description: string | null;
   is_public: boolean;
+  is_complete: boolean;
+  is_locked: boolean;
   cover_image_url: string | null;
+  sort_order: number;
   like_count: number;
   comment_count: number;
   created_at: string;
@@ -141,6 +144,18 @@ export interface Like {
 
 // Planning Features Types
 export type GoalType = 'models_painted' | 'items_completed' | 'custom';
+
+export interface WishlistItem {
+  id: string;
+  user_id: string;
+  name: string;
+  game_system: string | null;
+  notes: string | null;
+  priority: number;
+  is_purchased: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface PaintQueueItem {
   id: string;
