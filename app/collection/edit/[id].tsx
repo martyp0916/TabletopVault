@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform, KeyboardAvoidingView } from 'react-native';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -13,11 +13,17 @@ import * as ImagePicker from 'expo-image-picker';
 const GAME_LIST = [
   'Battle Tech',
   'Bolt Action',
+  'Dropfleet Commander',
+  'Dropzone Commander',
+  'Dystopian Wars',
+  'Fallout Wasteland Warfare',
   'Halo Flashpoint',
   'Horus Heresy',
+  'Kings of War',
   'Marvel Crisis Protocol',
   'Star Wars Legion',
   'Star Wars Shatterpoint',
+  'Warmachine',
   'Warhammer 40K',
   'Warhammer 40K: Kill Team',
   'Warhammer Age of Sigmar',
@@ -34,6 +40,8 @@ export default function EditCollectionScreen() {
 
   // Form state
   const [name, setName] = useState('');
+  const [customGameName, setCustomGameName] = useState('');
+  const [isCustomGame, setIsCustomGame] = useState(false);
   const [description, setDescription] = useState('');
   const [showGameDropdown, setShowGameDropdown] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -56,7 +64,17 @@ export default function EditCollectionScreen() {
   // Populate form with existing collection data
   useEffect(() => {
     if (collection) {
-      setName(collection.name || '');
+      const collectionName = collection.name || '';
+      // Check if it's a custom game (not in the preset list)
+      if (collectionName && !GAME_LIST.includes(collectionName)) {
+        setName('Other');
+        setCustomGameName(collectionName);
+        setIsCustomGame(true);
+      } else {
+        setName(collectionName);
+        setCustomGameName('');
+        setIsCustomGame(false);
+      }
       setDescription(collection.description || '');
       fetchCurrentImage();
     }
@@ -151,15 +169,16 @@ export default function EditCollectionScreen() {
   };
 
   const handleSubmit = async () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Please select a game for the collection');
+    const gameName = name === 'Other' ? customGameName.trim() : name.trim();
+    if (!gameName) {
+      Alert.alert('Error', 'Please select or enter a game for the collection');
       return;
     }
 
     setSaving(true);
 
     const updates: any = {
-      name: name.trim(),
+      name: gameName,
       description: description.trim() || null,
     };
 
@@ -235,10 +254,30 @@ export default function EditCollectionScreen() {
     );
   }
 
+  // Lock check - prevent editing locked collections
+  if (collection.is_locked) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
+        <FontAwesome name="lock" size={48} color={colors.textSecondary} />
+        <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: 16 }}>Collection Locked</Text>
+        <Text style={{ color: colors.textSecondary, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>
+          This collection is locked and cannot be edited. Unlock it first to make changes.
+        </Text>
+        <Pressable onPress={() => router.back()} style={{ marginTop: 20 }}>
+          <Text style={{ color: '#991b1b', fontWeight: '600' }}>Go back</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   const displayImage = selectedImage || currentImageUrl;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={0}
+    >
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
@@ -251,9 +290,10 @@ export default function EditCollectionScreen() {
       </View>
 
       <ScrollView
-        style={{ backgroundColor: colors.background }}
+        style={{ backgroundColor: colors.background, flex: 1 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: 40 }}
       >
         {/* Form Fields */}
         <View style={styles.form}>
@@ -296,7 +336,9 @@ export default function EditCollectionScreen() {
                 styles.dropdownText,
                 { color: name ? colors.text : colors.textSecondary }
               ]}>
-                {name || 'Select a game...'}
+                {name === 'Other' && customGameName.trim()
+                  ? customGameName.trim()
+                  : (name || 'Select a game...')}
               </Text>
               <FontAwesome
                 name={showGameDropdown ? 'chevron-up' : 'chevron-down'}
@@ -318,6 +360,8 @@ export default function EditCollectionScreen() {
                       ]}
                       onPress={() => {
                         setName(game);
+                        setCustomGameName('');
+                        setIsCustomGame(false);
                         setShowGameDropdown(false);
                       }}
                     >
@@ -332,8 +376,42 @@ export default function EditCollectionScreen() {
                       )}
                     </Pressable>
                   ))}
+                  {/* Other option */}
+                  <Pressable
+                    style={[
+                      styles.dropdownItem,
+                      name === 'Other' && styles.dropdownItemSelected,
+                      { borderBottomColor: colors.border }
+                    ]}
+                    onPress={() => {
+                      setName('Other');
+                      setIsCustomGame(true);
+                      setShowGameDropdown(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.dropdownItemText,
+                      { color: name === 'Other' ? '#991b1b' : colors.text }
+                    ]}>
+                      Other (type your own)
+                    </Text>
+                    {name === 'Other' && (
+                      <FontAwesome name="check" size={14} color="#991b1b" />
+                    )}
+                  </Pressable>
                 </ScrollView>
               </View>
+            )}
+
+            {/* Custom game input when Other is selected */}
+            {name === 'Other' && (
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border, marginTop: 8 }]}
+                placeholder="Enter game name..."
+                placeholderTextColor={colors.textSecondary}
+                value={customGameName}
+                onChangeText={setCustomGameName}
+              />
             )}
           </View>
 
@@ -369,7 +447,7 @@ export default function EditCollectionScreen() {
           </Pressable>
         </View>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -453,6 +531,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     height: 100,
     textAlignVertical: 'top',
+  },
+  input: {
+    height: 52,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    borderWidth: 1,
   },
   imagePicker: {
     height: 150,

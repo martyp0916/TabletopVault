@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
+import { usePremium } from '@/lib/premium';
 import { useCollections } from '@/hooks/useCollections';
 import { useItems } from '@/hooks/useItems';
 import { GameSystem, ItemStatus } from '@/types/database';
@@ -23,8 +24,14 @@ function getGameSystemFromName(name: string): GameSystem {
     'Star Wars Shatterpoint': 'legion',
     'Battle Tech': 'other',
     'Bolt Action': 'other',
+    'Dropfleet Commander': 'other',
+    'Dropzone Commander': 'other',
+    'Dystopian Wars': 'other',
+    'Fallout Wasteland Warfare': 'other',
     'Halo Flashpoint': 'other',
+    'Kings of War': 'other',
     'Marvel Crisis Protocol': 'other',
+    'Warmachine': 'other',
   };
   return nameMap[name] || 'other';
 }
@@ -36,8 +43,9 @@ export default function AddScreen() {
   const hasBackground = !!backgroundImageUrl;
 
   const { user } = useAuth();
-  const { collections, loading: collectionsLoading } = useCollections(user?.id);
-  const { createItem } = useItems(user?.id);
+  const { isPremium, showUpgradePrompt } = usePremium();
+  const { collections, loading: collectionsLoading } = useCollections(user?.id, isPremium);
+  const { createItem } = useItems(user?.id, undefined, isPremium);
 
   // Form state
   const [name, setName] = useState('');
@@ -208,7 +216,7 @@ export default function AddScreen() {
     else if (primed > 0) derivedStatus = 'primed';
     else if (assembled > 0) derivedStatus = 'assembled';
 
-    const { data: newItem, error } = await createItem({
+    const result = await createItem({
       collection_id: selectedCollection,
       name: name.trim(),
       game_system: derivedGameSystem,
@@ -223,11 +231,18 @@ export default function AddScreen() {
       notes: notes.trim() || undefined,
     });
 
-    if (error) {
+    if (result.error) {
       setSaving(false);
-      Alert.alert('Error', error.message);
+      // Check if this is a premium limit error
+      if (result.error.message === 'LIMIT_REACHED' && 'limitType' in result) {
+        showUpgradePrompt('items');
+        return;
+      }
+      Alert.alert('Error', result.error.message);
       return;
     }
+
+    const newItem = result.data;
 
     // Upload image if selected
     if (selectedImage && newItem) {
@@ -462,7 +477,7 @@ export default function AddScreen() {
 
             {/* Assembled */}
             <View style={styles.statusCountRow}>
-              <View style={[styles.statusDot, { backgroundColor: '#f59e0b' }]} />
+              <View style={[styles.statusDot, { backgroundColor: '#991b1b' }]} />
               <Text style={[styles.statusCountLabel, { color: colors.text }]}>Assembled</Text>
               <TextInput
                 style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
@@ -544,7 +559,7 @@ function getStatusColor(status: string): string {
   switch (status) {
     case 'painted': return '#10b981';
     case 'primed': return '#6366f1';
-    case 'assembled': return '#f59e0b';
+    case 'assembled': return '#991b1b';
     case 'based': return '#ec4899';
     case 'nib': return '#6b7280';
     default: return '#6b7280';
@@ -717,11 +732,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#374151',
-    padding: 16,
-    borderRadius: 12,
-    gap: 8,
-    marginTop: 10,
+    backgroundColor: '#991b1b',
+    padding: 18,
+    borderRadius: 16,
+    gap: 10,
+    marginTop: 12,
   },
   submitButtonDisabled: {
     opacity: 0.6,

@@ -11,6 +11,7 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { ThemeProvider as AppThemeProvider, useTheme } from '@/lib/theme';
+import { PremiumProvider } from '@/lib/premium';
 import { useProfile } from '@/hooks/useProfile';
 import { supabase } from '@/lib/supabase';
 
@@ -64,7 +65,9 @@ function ThemeWithProfile() {
 
   return (
     <AppThemeProvider backgroundPath={profile?.background_image_url}>
-      <RootLayoutNav />
+      <PremiumProvider>
+        <RootLayoutNav />
+      </PremiumProvider>
     </AppThemeProvider>
   );
 }

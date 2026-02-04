@@ -18,8 +18,9 @@ import {
   LIMITS,
 } from '@/lib/validation';
 import { rateLimiter, getRateLimitKey } from '@/lib/rateLimiter';
+import { FREE_TIER_LIMITS } from '@/lib/premium';
 
-export function useCollections(userId: string | undefined) {
+export function useCollections(userId: string | undefined, isPremium: boolean = true) {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,9 +64,18 @@ export function useCollections(userId: string | undefined) {
   /**
    * Create a new collection
    * SECURITY: Validates and sanitizes all inputs
+   * PREMIUM: Checks collection limit for free users
    */
   const createCollection = async (name: string, description?: string) => {
     if (!userId) return { error: new Error('Not authenticated') };
+
+    // PREMIUM: Check collection limit for free users
+    if (!isPremium && collections.length >= FREE_TIER_LIMITS.MAX_COLLECTIONS) {
+      return {
+        error: new Error('LIMIT_REACHED'),
+        limitType: 'collections' as const,
+      };
+    }
 
     // SECURITY: Validate name
     const nameValidation = validateCollectionName(name);

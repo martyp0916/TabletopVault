@@ -3,7 +3,7 @@
  *
  * Functions to export collection data to CSV and PDF formats.
  */
-import { Paths, File } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
 import { Collection, Item, getEffectiveStatus, STATUS_LABELS } from '@/types/database';
@@ -368,9 +368,9 @@ function getStatusColor(status: string): string {
     case 'primed':
       return '#6366f1';
     case 'assembled':
-      return '#f59e0b';
+      return '#991b1b';
     case 'wip':
-      return '#f59e0b';
+      return '#991b1b';
     case 'nib':
       return '#ef4444';
     default:
@@ -386,12 +386,14 @@ export async function exportToCSV(
   filename: string = 'tabletopvault-export'
 ): Promise<void> {
   const csv = generateCSV(collections);
-  const file = new File(Paths.document, `${filename}.csv`);
+  const fileUri = `${FileSystem.documentDirectory}${filename}.csv`;
 
-  await file.write(csv);
+  await FileSystem.writeAsStringAsync(fileUri, csv, {
+    encoding: FileSystem.EncodingType.UTF8,
+  });
 
   if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(file.uri, {
+    await Sharing.shareAsync(fileUri, {
       mimeType: 'text/csv',
       dialogTitle: 'Export Collection Data',
       UTI: 'public.comma-separated-values-text',
@@ -404,7 +406,8 @@ export async function exportToCSV(
  */
 export async function exportToPDF(
   collections: ExportCollection[],
-  title: string = 'TabletopVault Collection'
+  title: string = 'TabletopVault Collection',
+  filename: string = 'tabletopvault-export'
 ): Promise<void> {
   const html = generatePDFHTML(collections, title);
 
@@ -413,8 +416,17 @@ export async function exportToPDF(
     base64: false,
   });
 
+  // Move the file to document directory with custom filename
+  const newUri = `${FileSystem.documentDirectory}${filename}.pdf`;
+
+  // Copy the generated PDF to the new location
+  await FileSystem.copyAsync({
+    from: uri,
+    to: newUri,
+  });
+
   if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(uri, {
+    await Sharing.shareAsync(newUri, {
       mimeType: 'application/pdf',
       dialogTitle: 'Export Collection Data',
       UTI: 'com.adobe.pdf',

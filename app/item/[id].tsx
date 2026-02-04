@@ -23,6 +23,7 @@ export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams();
   const { isDarkMode, toggleTheme } = useTheme();
   const [deleting, setDeleting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [photos, setPhotos] = useState<ItemImage[]>([]);
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [loadingPhotos, setLoadingPhotos] = useState(true);
@@ -137,6 +138,59 @@ export default function ItemDetailScreen() {
         },
       ]
     );
+  };
+
+  const handleDuplicate = async () => {
+    if (!item) return;
+
+    if (isCollectionLocked) {
+      Alert.alert('Collection Locked', 'This item is in a locked collection. Unlock the collection first to duplicate items.');
+      return;
+    }
+
+    setDuplicating(true);
+
+    try {
+      // Create a copy of the item without id, created_at, updated_at
+      const { id: _id, created_at, updated_at, ...itemData } = item;
+
+      // Append "(Copy)" to the name
+      const newName = `${itemData.name} (Copy)`;
+
+      const { data, error } = await supabase
+        .from('items')
+        .insert({
+          ...itemData,
+          name: newName,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        Alert.alert('Error', error.message);
+        setDuplicating(false);
+        return;
+      }
+
+      Alert.alert(
+        'Item Duplicated',
+        `"${newName}" has been created.`,
+        [
+          {
+            text: 'View Copy',
+            onPress: () => router.replace(`/item/${data.id}`),
+          },
+          {
+            text: 'Stay Here',
+            style: 'cancel',
+          },
+        ]
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to duplicate item');
+    } finally {
+      setDuplicating(false);
+    }
   };
 
   if (loading) {
@@ -310,7 +364,7 @@ export default function ItemDetailScreen() {
               )}
               {item.assembled_count > 0 && (
                 <View style={styles.statusItem}>
-                  <View style={[styles.statusDot, { backgroundColor: '#f59e0b' }]} />
+                  <View style={[styles.statusDot, { backgroundColor: '#991b1b' }]} />
                   <Text style={[styles.statusItemLabel, { color: colors.text }]}>Assembled</Text>
                   <Text style={[styles.statusItemValue, { color: colors.text }]}>{item.assembled_count}</Text>
                 </View>
@@ -373,15 +427,41 @@ export default function ItemDetailScreen() {
         {/* Actions */}
         <View style={styles.actionsSection}>
           <Pressable
-            style={[styles.editButton, { backgroundColor: '#991b1b' }]}
+            style={[styles.actionButton, { backgroundColor: '#991b1b' }]}
             onPress={() => router.push(`/item/edit/${id}`)}
           >
             <FontAwesome name="pencil" size={16} color="#fff" />
-            <Text style={styles.editButtonText}>Edit</Text>
+            <Text style={styles.actionButtonText}>Edit</Text>
           </Pressable>
           <Pressable
             style={[
-              styles.deleteButton,
+              styles.actionButton,
+              { backgroundColor: isCollectionLocked ? colors.card : '#4b5563' },
+            ]}
+            onPress={handleDuplicate}
+            disabled={duplicating || isCollectionLocked}
+          >
+            {duplicating ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <>
+                <FontAwesome
+                  name={isCollectionLocked ? 'lock' : 'copy'}
+                  size={16}
+                  color={isCollectionLocked ? colors.textSecondary : '#fff'}
+                />
+                <Text style={[
+                  styles.actionButtonText,
+                  { color: isCollectionLocked ? colors.textSecondary : '#fff' },
+                ]}>
+                  {isCollectionLocked ? 'Locked' : 'Duplicate'}
+                </Text>
+              </>
+            )}
+          </Pressable>
+          <Pressable
+            style={[
+              styles.actionButtonOutline,
               { borderColor: isCollectionLocked ? colors.border : '#ef4444' },
             ]}
             onPress={handleDelete}
@@ -418,8 +498,8 @@ function getStatusColor(status: string): string {
     case 'painted': return '#10b981';
     case 'based': return '#8b5cf6';
     case 'primed': return '#6366f1';
-    case 'assembled': return '#f59e0b';
-    case 'wip': return '#f59e0b';
+    case 'assembled': return '#991b1b';
+    case 'wip': return '#991b1b';
     case 'nib': return '#ef4444';
     default: return '#9ca3af';
   }
@@ -634,36 +714,36 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 20,
     marginTop: 24,
-    gap: 12,
+    gap: 10,
     backgroundColor: 'transparent',
   },
-  editButton: {
+  actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 6,
   },
-  editButtonText: {
-    fontSize: 15,
+  actionButtonText: {
+    fontSize: 14,
     fontWeight: '600',
     color: '#fff',
   },
-  deleteButton: {
+  actionButtonOutline: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
     borderWidth: 1,
-    gap: 8,
+    gap: 6,
     backgroundColor: 'transparent',
   },
   deleteButtonText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
 });

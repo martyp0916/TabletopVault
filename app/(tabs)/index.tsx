@@ -1,6 +1,7 @@
-import { StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput, View } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput, View, Platform } from 'react-native';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import { router } from 'expo-router';
 import Colors from '@/constants/Colors';
 import { useCallback, useState, useMemo } from 'react';
@@ -228,9 +229,9 @@ export default function HomeScreen() {
           </View>
           <View style={[styles.statusCard, { backgroundColor: colors.card }]}>
             <View style={[styles.statusIconContainer, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-              <FontAwesome name="wrench" size={18} color="#f59e0b" />
+              <FontAwesome name="wrench" size={18} color="#991b1b" />
             </View>
-            <Text style={[styles.statusNumber, { color: '#f59e0b' }]}>
+            <Text style={[styles.statusNumber, { color: '#991b1b' }]}>
               {statsLoading ? '—' : stats.assembledTotal}
             </Text>
             <Text style={[styles.statusLabel, { color: colors.textSecondary }]}>
@@ -302,7 +303,7 @@ export default function HomeScreen() {
           </Text>
         </View>
         <Pressable
-          style={[styles.statCard, { backgroundColor: '#0891b2' }]}
+          style={[styles.statCard, { backgroundColor: '#991b1b' }]}
           onPress={() => router.push('/(tabs)/collections')}
         >
           <View style={styles.statCardIcon}>
@@ -421,10 +422,10 @@ export default function HomeScreen() {
 
 function getFilterColor(status: FilterStatus): string {
   switch (status) {
-    case 'all': return '#991b1b';      // Crimson - primary accent
+    case 'all': return '#991b1b';      // Teal - primary accent
     case 'painted': return '#10b981';
     case 'primed': return '#6366f1';
-    case 'assembled': return '#f59e0b';
+    case 'assembled': return '#991b1b';
     case 'nib': return '#6b7280';
     default: return '#991b1b';
   }
@@ -435,8 +436,8 @@ function getStatusColor(status: string): string {
     case 'painted': return '#10b981';
     case 'based': return '#8b5cf6';
     case 'primed': return '#6366f1';
-    case 'assembled': return '#f59e0b';
-    case 'wip': return '#f59e0b';
+    case 'assembled': return '#991b1b';
+    case 'wip': return '#991b1b';
     case 'nib': return '#ef4444';
     default: return '#9ca3af';
   }
@@ -459,11 +460,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   appName: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: '800',
   },
   greeting: {
-    fontSize: 14,
+    fontSize: 15,
     marginTop: 2,
   },
   themeToggle: {
@@ -472,6 +473,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   statusGrid: {
     paddingHorizontal: 24,
@@ -487,8 +489,10 @@ const styles = StyleSheet.create({
   statusCard: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 16,
-    borderRadius: 16,
+    paddingVertical: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
   },
   statusIconContainer: {
     width: 36,
@@ -499,13 +503,13 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   statusNumber: {
-    fontSize: 32,
-    fontWeight: '700',
+    fontSize: 36,
+    fontWeight: '800',
     letterSpacing: -1,
   },
   statusLabel: {
-    fontSize: 11,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '600',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
     marginTop: 2,
@@ -513,8 +517,10 @@ const styles = StyleSheet.create({
   progressSection: {
     marginHorizontal: 24,
     marginTop: 16,
-    padding: 16,
-    borderRadius: 12,
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
   },
   progressHeader: {
     flexDirection: 'row',
@@ -524,12 +530,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   progressTitle: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
   },
   progressPercent: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '800',
   },
   progressBar: {
     width: '100%',
@@ -554,8 +560,8 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    padding: 16,
-    borderRadius: 16,
+    padding: 18,
+    borderRadius: 20,
     alignItems: 'center',
   },
   statCardIcon: {
@@ -563,11 +569,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   statCardNumber: {
-    fontSize: 32,
-    fontWeight: '700',
+    fontSize: 36,
+    fontWeight: '800',
   },
   statCardLabel: {
-    fontSize: 12,
+    fontSize: 13,
     marginTop: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -585,16 +591,18 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 1.5,
   },
   nextCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
+    padding: 18,
+    borderRadius: 16,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
   },
   nextCardAccent: {
     width: 4,
@@ -626,9 +634,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 14,
-    borderRadius: 12,
-    gap: 8,
+    padding: 16,
+    borderRadius: 16,
+    gap: 10,
   },
   primaryActionText: {
     fontSize: 15,
@@ -639,18 +647,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 14,
-    borderRadius: 12,
-    gap: 8,
+    padding: 16,
+    borderRadius: 16,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.3)',
   },
   secondaryActionText: {
     fontSize: 15,
     fontWeight: '600',
   },
   recentItemsContainer: {
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    borderRadius: 16,
+    paddingHorizontal: 16,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
   },
   recentItem: {
     flexDirection: 'row',
@@ -690,11 +702,11 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    height: 44,
-    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 48,
+    borderRadius: 16,
     borderWidth: 1,
-    gap: 10,
+    gap: 12,
   },
   searchInput: {
     flex: 1,
@@ -710,9 +722,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
     borderWidth: 1,
   },
   filterChipText: {
@@ -722,9 +734,11 @@ const styles = StyleSheet.create({
   searchResultItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
-    borderRadius: 12,
-    marginBottom: 8,
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
   },
   searchResultContent: {
     flex: 1,

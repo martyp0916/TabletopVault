@@ -1,27 +1,41 @@
-import { StyleSheet, ScrollView, Pressable, RefreshControl, Modal, TextInput, Alert, View, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, RefreshControl, Modal, TextInput, Alert, View, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { router } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
+import { usePremium } from '@/lib/premium';
+import { PremiumPaywall } from '@/components/PremiumPaywall';
 // Paint queue hook no longer needed - Progress Queue auto-populates from item status
 import { usePaintingGoals } from '@/hooks/usePaintingGoals';
 import { useProgressStats } from '@/hooks/useProgressStats';
 import { useItems } from '@/hooks/useItems';
 import { useWishlist } from '@/hooks/useWishlist';
-import { STATUS_COLORS, getEffectiveStatus, GoalType, Item, WishlistItem } from '@/types/database';
+import { STATUS_COLORS, getEffectiveStatus, GoalType, Item, WishlistItem, PaintingGoal } from '@/types/database';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import {
+  requestNotificationPermissions,
+  scheduleAllGoalNotifications,
+  cancelGoalNotification,
+  areNotificationsEnabled,
+} from '@/lib/notifications';
 
 const GAME_LIST = [
   'Battle Tech',
   'Bolt Action',
+  'Dropfleet Commander',
+  'Dropzone Commander',
+  'Dystopian Wars',
+  'Fallout Wasteland Warfare',
   'Halo Flashpoint',
   'Horus Heresy',
+  'Kings of War',
   'Marvel Crisis Protocol',
   'Star Wars Legion',
   'Star Wars Shatterpoint',
+  'Warmachine',
   'Warhammer 40K',
   'Warhammer 40K: Kill Team',
   'Warhammer Age of Sigmar',
@@ -33,6 +47,21 @@ export default function PlanningScreen() {
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user } = useAuth();
+  const { isPremium, loading: premiumLoading } = usePremium();
+
+  // Show paywall for free users
+  if (!premiumLoading && !isPremium) {
+    return <PremiumPaywall />;
+  }
+
+  // Show loading while checking premium status
+  if (premiumLoading) {
+    return (
+      <View style={[styles.container, styles.loadingContainer, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}>
+        <ActivityIndicator size="large" color={colors.text} />
+      </View>
+    );
+  }
   const { goals, activeGoals, loading: goalsLoading, createGoal, updateGoal, updateProgress, deleteGoal, refresh: refreshGoals } = usePaintingGoals(user?.id);
   const { overallProgress, gameSystemProgress, loading: progressLoading, refresh: refreshProgress } = useProgressStats(user?.id);
   const { items, loading: itemsLoading, refresh: refreshItems } = useItems(user?.id);
@@ -58,6 +87,7 @@ export default function PlanningScreen() {
   const [editingWishlistId, setEditingWishlistId] = useState<string | null>(null);
   const [wishlistName, setWishlistName] = useState('');
   const [wishlistGameSystem, setWishlistGameSystem] = useState('');
+  const [wishlistCustomGameSystem, setWishlistCustomGameSystem] = useState('');
   const [showGameDropdown, setShowGameDropdown] = useState(false);
   const [wishlistNotes, setWishlistNotes] = useState('');
 
@@ -123,7 +153,7 @@ export default function PlanningScreen() {
 
     if (editingGoalId) {
       // Update existing goal
-      const { error } = await updateGoal(editingGoalId, {
+      const { data, error } = await updateGoal(editingGoalId, {
         title: goalTitle,
         targetCount: target,
         currentCount: currentProgress,
@@ -133,6 +163,13 @@ export default function PlanningScreen() {
       if (error) {
         Alert.alert('Error', error.message);
       } else {
+        // Schedule notifications if goal has deadline and is not completed
+        if (data && goalDeadline && !data.is_completed) {
+          await scheduleAllGoalNotifications(data);
+        } else if (data && (!goalDeadline || data.is_completed)) {
+          // Cancel notifications if deadline removed or goal completed
+          await cancelGoalNotification(data.id);
+        }
         setShowGoalModal(false);
         setEditingGoalId(null);
         setGoalTitle('');
@@ -142,7 +179,7 @@ export default function PlanningScreen() {
       }
     } else {
       // Create new goal
-      const { error } = await createGoal(
+      const { data, error } = await createGoal(
         goalTitle,
         goalType,
         target,
@@ -152,6 +189,19 @@ export default function PlanningScreen() {
       if (error) {
         Alert.alert('Error', error.message);
       } else {
+        // Schedule notifications if goal has deadline
+        if (data && goalDeadline) {
+          // Request permissions if not already granted
+          const hasPermission = await areNotificationsEnabled();
+          if (!hasPermission) {
+            const granted = await requestNotificationPermissions();
+            if (granted) {
+              await scheduleAllGoalNotifications(data);
+            }
+          } else {
+            await scheduleAllGoalNotifications(data);
+          }
+        }
         setShowGoalModal(false);
         setGoalTitle('');
         setGoalTarget('');
@@ -175,6 +225,8 @@ export default function PlanningScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            // Cancel any scheduled notifications
+            await cancelGoalNotification(goal.id);
             const { error } = await deleteGoal(goal.id);
             if (error) Alert.alert('Error', error.message);
           },
@@ -195,6 +247,7 @@ export default function PlanningScreen() {
     setEditingWishlistId(null);
     setWishlistName('');
     setWishlistGameSystem('');
+    setWishlistCustomGameSystem('');
     setShowGameDropdown(false);
     setWishlistNotes('');
     setShowWishlistModal(true);
@@ -203,7 +256,15 @@ export default function PlanningScreen() {
   const openEditWishlistModal = (item: WishlistItem) => {
     setEditingWishlistId(item.id);
     setWishlistName(item.name);
-    setWishlistGameSystem(item.game_system || '');
+    // Check if it's a custom game (not in the preset list)
+    const gameSystem = item.game_system || '';
+    if (gameSystem && !GAME_LIST.includes(gameSystem)) {
+      setWishlistGameSystem('Other');
+      setWishlistCustomGameSystem(gameSystem);
+    } else {
+      setWishlistGameSystem(gameSystem);
+      setWishlistCustomGameSystem('');
+    }
     setShowGameDropdown(false);
     setWishlistNotes(item.notes || '');
     setShowWishlistModal(true);
@@ -215,11 +276,16 @@ export default function PlanningScreen() {
       return;
     }
 
+    // Use custom game name if "Other" is selected
+    const gameSystemToSave = wishlistGameSystem === 'Other'
+      ? wishlistCustomGameSystem.trim()
+      : wishlistGameSystem;
+
     if (editingWishlistId) {
       // Update existing item
       const { error } = await updateWishlistItem(editingWishlistId, {
         name: wishlistName,
-        gameSystem: wishlistGameSystem || null,
+        gameSystem: gameSystemToSave || null,
         notes: wishlistNotes || null,
       });
 
@@ -233,7 +299,7 @@ export default function PlanningScreen() {
       // Create new item
       const { error } = await createWishlistItem(
         wishlistName,
-        wishlistGameSystem || undefined,
+        gameSystemToSave || undefined,
         wishlistNotes || undefined
       );
 
@@ -529,6 +595,8 @@ export default function PlanningScreen() {
                                 text: 'Delete',
                                 style: 'destructive',
                                 onPress: async () => {
+                                  // Cancel any scheduled notifications
+                                  await cancelGoalNotification(goal.id);
                                   const { error } = await deleteGoal(goal.id);
                                   if (error) Alert.alert('Error', error.message);
                                 },
@@ -641,7 +709,7 @@ export default function PlanningScreen() {
                   <FontAwesome
                     name={item.is_purchased ? 'check-circle' : 'star'}
                     size={16}
-                    color={item.is_purchased ? '#10b981' : '#f59e0b'}
+                    color={item.is_purchased ? '#10b981' : '#991b1b'}
                   />
                   <View style={styles.wishlistItemInfo}>
                     <Text
@@ -914,7 +982,9 @@ export default function PlanningScreen() {
                     styles.dropdownText,
                     { color: wishlistGameSystem ? colors.text : colors.textSecondary }
                   ]}>
-                    {wishlistGameSystem || 'Select a game...'}
+                    {wishlistGameSystem === 'Other' && wishlistCustomGameSystem.trim()
+                      ? wishlistCustomGameSystem.trim()
+                      : (wishlistGameSystem || 'Select a game...')}
                   </Text>
                   <FontAwesome
                     name={showGameDropdown ? 'chevron-up' : 'chevron-down'}
@@ -934,6 +1004,7 @@ export default function PlanningScreen() {
                         ]}
                         onPress={() => {
                           setWishlistGameSystem('');
+                          setWishlistCustomGameSystem('');
                           setShowGameDropdown(false);
                         }}
                       >
@@ -957,6 +1028,7 @@ export default function PlanningScreen() {
                           ]}
                           onPress={() => {
                             setWishlistGameSystem(game);
+                            setWishlistCustomGameSystem('');
                             setShowGameDropdown(false);
                           }}
                         >
@@ -971,8 +1043,41 @@ export default function PlanningScreen() {
                           )}
                         </Pressable>
                       ))}
+                      {/* Other option */}
+                      <Pressable
+                        style={[
+                          styles.dropdownItem,
+                          wishlistGameSystem === 'Other' && styles.dropdownItemSelected,
+                          { borderBottomColor: colors.border }
+                        ]}
+                        onPress={() => {
+                          setWishlistGameSystem('Other');
+                          setShowGameDropdown(false);
+                        }}
+                      >
+                        <Text style={[
+                          styles.dropdownItemText,
+                          { color: wishlistGameSystem === 'Other' ? '#991b1b' : colors.text }
+                        ]}>
+                          Other (type your own)
+                        </Text>
+                        {wishlistGameSystem === 'Other' && (
+                          <FontAwesome name="check" size={14} color="#991b1b" />
+                        )}
+                      </Pressable>
                     </ScrollView>
                   </View>
+                )}
+
+                {/* Custom game input when Other is selected */}
+                {wishlistGameSystem === 'Other' && (
+                  <TextInput
+                    style={[styles.textInput, { backgroundColor: colors.background, color: colors.text, borderColor: colors.border, marginTop: 8 }]}
+                    placeholder="Enter game name..."
+                    placeholderTextColor={colors.textSecondary}
+                    value={wishlistCustomGameSystem}
+                    onChangeText={setWishlistCustomGameSystem}
+                  />
                 )}
               </View>
 
@@ -1008,6 +1113,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   scrollView: {
     flex: 1,
   },
@@ -1024,7 +1133,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   title: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: '800',
   },
   themeToggle: {
@@ -1046,11 +1155,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   progressTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
   },
   progressPercent: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '800',
   },
   progressBarBg: {
@@ -1084,11 +1193,11 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   statusCount: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '800',
   },
   statusLabel: {
-    fontSize: 10,
+    fontSize: 11,
     marginTop: 2,
   },
   section: {
@@ -1107,8 +1216,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: 1.5,
   },
   addButtonContainer: {

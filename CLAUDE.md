@@ -7,11 +7,28 @@
 **Target Games**: Warhammer 40K, Warhammer Age of Sigmar, Horus Heresy, Kill Team, Star Wars Legion, Star Wars Shatterpoint, Halo Flashpoint, Bolt Action, Marvel Crisis Protocol, Battle Tech
 **Tech Stack**: React Native + Expo + TypeScript + Supabase
 **Repository**: https://github.com/martyp0916/TabletopVault
-**Last Updated**: January 26, 2025
+**Last Updated**: January 30, 2025
 
 ---
 
-## Recent Changes (January 26, 2025)
+## Recent Changes (January 30, 2025)
+
+- **Collection management improvements**:
+  - Drag-to-reorder collections (long press and drag)
+  - Collection complete/lock status badges
+  - Item search within collections tab
+  - Fixed scrolling issues with proper flex layout
+- **Export functionality**: CSV and PDF export for collection data (`lib/exportData.ts`)
+- **Help & Feedback screen**: New screen at `app/profile/help-feedback.tsx`
+- **Bug fixes**:
+  - Fixed TypeScript errors (style names, type incompatibilities)
+  - Updated expo-file-system to use new class-based API (v19)
+  - Fixed Supabase nested data transformation in followers/following screens
+  - Removed deprecated `purchase_date` field from item detail view
+
+---
+
+## Previous Changes (January 26, 2025)
 
 - **Theme persistence**: Dark/light mode preference now saves to AsyncStorage and persists across app restarts
 - **Collection detail improvements**:
@@ -31,7 +48,7 @@
 
 ## Current Status: Full Feature App with Social & Planning
 
-The app is a fully-featured tabletop collection manager with social features and planning tools. All core features are complete including inventory management, social following, progress queue, goal tracking, wishlist, and progress dashboards. The app uses a crimson/dark theme with support for custom background images. Theme preference (dark/light mode) persists across app restarts. Collection detail screens show progress cards and alphabetically-sorted items with notes visible.
+The app is a fully-featured tabletop collection manager with social features and planning tools. All core features are complete including inventory management, social following, progress queue, goal tracking, wishlist, export functionality, and progress dashboards. The app uses a crimson/dark theme with support for custom background images. Theme preference (dark/light mode) persists across app restarts. Collections can be reordered via drag-and-drop and marked as complete/locked.
 
 ### What's Working
 
@@ -48,12 +65,17 @@ The app is a fully-featured tabletop collection manager with social features and
 | Avatar upload | Working | Camera + gallery picker for profile photos |
 | Change password | Working | Requires current password verification |
 | Custom background image | Working | Set app-wide background from Profile tab |
+| Help & Feedback | Working | Links to GitHub issues for support |
 | **Collections** | | |
 | Create collection | Working | Dropdown menu with 10 supported games + cover image |
-| View collections | Working | Grid layout with item counts and cover images |
+| View collections | Working | List layout with item counts, cover images, drag-to-reorder |
 | Edit collection | Working | Edit game, description, and cover image |
 | Delete collection | Working | With confirmation dialog |
 | Collection cover images | Working | Upload faction logos or photos for collections |
+| Collection complete status | Working | Mark collections as complete (checkmark badge) |
+| Collection lock status | Working | Lock collections to prevent changes (lock badge) |
+| Drag-to-reorder | Working | Long press and drag to reorder collections |
+| Item search | Working | Search items by name within collections tab |
 | **Items** | | |
 | Add item | Working | Models per box + status breakdown |
 | Edit item | Working | Edit name, faction, quantity, status counts, notes |
@@ -79,8 +101,11 @@ The app is a fully-featured tabletop collection manager with social features and
 | Goal progress | Working | Track current vs target count |
 | Complete goals | Working | Mark goals as finished |
 | Overall progress | Working | Percentage of models painted across all collections |
-| Collection progress | Working | Per-collection painting progress breakdown |
+| Game system progress | Working | Per-game-system painting progress breakdown |
 | Wishlist | Working | Track future items to buy with game system dropdown |
+| **Export** | | |
+| Export to CSV | Working | Export all collection data to CSV format |
+| Export to PDF | Working | Export styled PDF with progress stats |
 | **UI/UX** | | |
 | Global dark mode | Working | Theme persists across app restarts via AsyncStorage |
 | Dark mode contrast | Working | Lighter card backgrounds for better visibility |
@@ -92,8 +117,6 @@ The app is a fully-featured tabletop collection manager with social features and
 | Progress card | Working | Shows painting percentage, progress bar, status breakdown |
 | Item notes display | Working | Notes visible on item cards (2-line limit) |
 | Collection pre-selection | Working | Add screen auto-selects collection when navigating from collection |
-| **Planning Tab** | | |
-| Goal delete button | Working | Visible trash icon with confirmation dialog |
 
 ---
 
@@ -108,10 +131,10 @@ The app has 5 main tabs:
 ```
 
 1. **Home** - Dashboard with status overview, search/filter
-2. **Collections** - Grid of user's collections
+2. **Collections** - List of user's collections with drag-to-reorder and search
 3. **Add** - Form to add new items
-4. **Planning** - Progress queue, goals, progress tracking
-5. **Profile** - User info, settings, customization, logout
+4. **Planning** - Progress queue, goals, wishlist, progress tracking
+5. **Profile** - User info, settings, customization, help, logout
 
 ---
 
@@ -141,7 +164,7 @@ The app has 5 main tabs:
 ### Progress Dashboard
 - **Overall Progress**: Total models painted across all collections with percentage
 - **Status Breakdown**: Count of models in each status (NIB, Assembled, Primed, Painted)
-- **Collection Progress**: Per-collection painted percentage, sorted by least progress first
+- **Game System Progress**: Per-game-system painted percentage, sorted by least progress first
 
 ### Wishlist
 - Track future items you want to purchase
@@ -165,11 +188,52 @@ The app has 5 main tabs:
   - Status breakdown (Unbuilt, Built, Primed, Painted counts)
 - **Item Notes Display**: Notes shown directly on item cards (max 2 lines)
 - **Add Button Integration**: "Add" button navigates to Add screen with collection pre-selected
+- **Complete/Lock Badges**: Visual indicators for collection status
 
 ### Technical Notes
 - Uses React Native's `View` component (not themed) to avoid auto-background issues
 - Progress bar uses explicit colors (#333333 card, #404040 bar background in dark mode)
 - Items sorted using `localeCompare()` for proper alphabetical ordering
+
+---
+
+## Collections Tab Features
+
+### Drag-to-Reorder
+- Long press on any collection card to start dragging
+- Drag to new position to reorder
+- Order persists to database via `sort_order` column
+- Uses `react-native-draggable-flatlist` library
+
+### Item Search
+- Search bar at top of collections tab
+- Search items by name across all collections
+- Shows matching items with collection name
+- Tap result to navigate to that collection
+- Handles items that exist in multiple collections with picker modal
+
+### Collection Status Badges
+- **Complete Badge** (green checkmark): Collection marked as complete
+- **Lock Badge** (gray lock): Collection is locked from changes
+
+---
+
+## Export Functionality
+
+### CSV Export (`lib/exportData.ts`)
+- Exports all collection and item data to CSV format
+- Columns: Collection, Description, Item Name, Faction, Status, NIB, Assembled, Primed, Painted, Total Models, Notes, Date Added
+- Uses expo-file-system v19 class-based API (`Paths.document`, `File`)
+- Shares via native share sheet
+
+### PDF Export
+- Generates styled HTML report with:
+  - Header with title and export date
+  - Summary stats (collections, items, models, painted %)
+  - Per-collection sections with progress bars
+  - Item tables with status colors
+- Uses expo-print for PDF generation
+- Shares via native share sheet
 
 ---
 
@@ -362,10 +426,11 @@ Client-side rate limiting with sensible defaults:
 
 ### Mass Assignment Protection
 All hooks reject unexpected fields:
-- `useCollections`: Only allows `name`, `description`, `is_public`, `cover_image_url`
+- `useCollections`: Only allows `name`, `description`, `is_public`, `cover_image_url`, `is_complete`, `is_locked`, `sort_order`
 - `useItems`: Only allows defined item fields
 - `useProfile`: Only allows `username`, `avatar_url`, `background_image_url`
 - `usePaintingGoals`: Only allows defined goal fields
+- `useWishlist`: Only allows defined wishlist fields
 
 ### OWASP Compliance
 - **A01:2021 - Broken Access Control**: RLS policies + client-side validation
@@ -407,9 +472,9 @@ TabletopVault/
 │   ├── (tabs)/                   # Main tab navigation
 │   │   ├── _layout.tsx           # Tab bar (transparent when background set)
 │   │   ├── index.tsx             # Home dashboard + search/filter
-│   │   ├── collections.tsx       # Collections grid + cover images
+│   │   ├── collections.tsx       # Collections list + drag-to-reorder + search
 │   │   ├── add.tsx               # Add item form + status counts
-│   │   ├── planning.tsx          # Progress queue, goals, progress
+│   │   ├── planning.tsx          # Progress queue, goals, wishlist, progress
 │   │   └── profile.tsx           # User profile, settings, customization
 │   ├── collection/
 │   │   ├── [id].tsx              # Collection detail + status breakdown
@@ -421,7 +486,8 @@ TabletopVault/
 │   │       └── [id].tsx          # Edit item + status counts
 │   ├── profile/
 │   │   ├── edit.tsx              # Edit profile (username, avatar)
-│   │   └── change-password.tsx   # Change password screen
+│   │   ├── change-password.tsx   # Change password screen
+│   │   └── help-feedback.tsx     # Help & feedback screen
 │   ├── user/
 │   │   ├── _layout.tsx           # User profile stack layout
 │   │   ├── [id].tsx              # View other user's profile
@@ -436,16 +502,17 @@ TabletopVault/
 ├── constants/
 │   └── Colors.ts                 # Crimson theme colors (Battle Ready Edition)
 ├── hooks/
-│   ├── useCollections.ts         # Collection CRUD with validation
+│   ├── useCollections.ts         # Collection CRUD with validation + reorder
 │   ├── useItems.ts               # Item CRUD with validation + stats
 │   ├── useProfile.ts             # Profile operations with validation
 │   ├── useFollows.ts             # Follow/unfollow operations
 │   ├── usePaintQueue.ts          # Paint queue management (legacy, not used)
 │   ├── usePaintingGoals.ts       # Painting goals CRUD
-│   ├── useProgressStats.ts       # Progress calculations
+│   ├── useProgressStats.ts       # Progress calculations by game system
 │   └── useWishlist.ts            # Wishlist CRUD, mark as purchased
 ├── lib/
 │   ├── auth.tsx                  # AuthContext with rate limiting
+│   ├── exportData.ts             # CSV/PDF export utilities
 │   ├── rateLimiter.ts            # Rate limiting utilities
 │   ├── supabase.ts               # Supabase client (env vars)
 │   ├── theme.tsx                 # ThemeProvider with background image support
@@ -457,7 +524,9 @@ TabletopVault/
 │       ├── 20250121000000_add_background_image.sql
 │       ├── 20250122000000_add_social_features.sql
 │       ├── 20250124000000_add_planning_features.sql
-│       └── 20250125000000_add_wishlist.sql
+│       ├── 20250125000000_add_wishlist.sql
+│       ├── 20250126000000_add_collection_complete_lock.sql
+│       └── 20250127000000_add_collection_sort_order.sql
 ├── types/
 │   └── database.ts               # TypeScript interfaces + helpers
 ├── .env                          # Environment variables (git ignored)
@@ -480,7 +549,7 @@ TabletopVault/
 | Table | Purpose |
 |-------|---------|
 | `profiles` | User profiles (id, email, username, avatar_url, background_image_url, is_premium) |
-| `collections` | Groups of items (id, user_id, name, description, is_public, cover_image_url) |
+| `collections` | Groups of items (id, user_id, name, description, is_public, is_complete, is_locked, sort_order, cover_image_url) |
 | `items` | Individual miniatures with status counts |
 | `item_images` | Photos for items |
 | `follows` | User follow relationships (follower_id, following_id) |
@@ -516,7 +585,7 @@ type GoalType = 'models_painted' | 'items_completed' | 'custom';
 
 // Core Interfaces
 interface User { id, email, username, avatar_url, background_image_url, is_premium, ... }
-interface Collection { id, user_id, name, description, is_public, cover_image_url, ... }
+interface Collection { id, user_id, name, description, is_public, is_complete, is_locked, sort_order, cover_image_url, ... }
 interface Item { id, collection_id, user_id, name, nib_count, assembled_count, primed_count, painted_count, ... }
 
 // Social Interfaces
@@ -539,12 +608,12 @@ getStatusColor(status: ItemStatus): string
 
 | Hook | Purpose |
 |------|---------|
-| `useCollections` | CRUD for collections with validation |
+| `useCollections` | CRUD for collections with validation, reorder support |
 | `useItems` | CRUD for items with validation and stats |
 | `useProfile` | Profile operations (fetch, update) |
 | `useFollows` | Follow/unfollow, get followers/following |
 | `usePaintingGoals` | CRUD for painting goals, progress tracking |
-| `useProgressStats` | Calculate overall and per-collection progress |
+| `useProgressStats` | Calculate overall and per-game-system progress |
 | `useWishlist` | CRUD for wishlist items, mark as purchased |
 
 ---
@@ -557,6 +626,9 @@ getStatusColor(status: ItemStatus): string
 - [x] Per-model status tracking
 - [x] Work in Progress status for mixed states
 - [x] Collection cover images
+- [x] Collection complete/lock status
+- [x] Drag-to-reorder collections
+- [x] Item search in collections tab
 - [x] Profile editing with avatar upload
 - [x] Change password functionality
 - [x] Security hardening (validation, rate limiting, env vars)
@@ -568,7 +640,7 @@ getStatusColor(status: ItemStatus): string
 - [x] Planning tab with auto-populated Progress Queue
 - [x] "See All" modal for full Progress Queue list
 - [x] Painting goals with deadlines
-- [x] Progress dashboard
+- [x] Progress dashboard (overall and per-game-system)
 - [x] Text visibility improvements
 - [x] Safe area handling for phone notch
 - [x] Keyboard avoiding for goal input and Add screen
@@ -581,11 +653,12 @@ getStatusColor(status: ItemStatus): string
 - [x] Alphabetical item sorting in collections
 - [x] Item notes display on collection cards
 - [x] Collection pre-selection when adding from collection
+- [x] Export data to CSV/PDF
+- [x] Help & Feedback screen
 
 ### Future Enhancements
 - [ ] Activity feed (see what followed users are painting)
 - [ ] Comments and likes on items
-- [ ] Export data to CSV/PDF
 - [ ] Premium subscription features
 - [ ] Push notifications for goal deadlines
 - [ ] Sharing collections publicly
@@ -603,6 +676,9 @@ npx expo start --tunnel
 
 # Install dependencies
 npm install
+
+# Run TypeScript check
+npx tsc --noEmit
 
 # Run database migration
 node -e "
@@ -638,12 +714,14 @@ eas build --platform android
 4. Create a collection (select game, optionally add cover image)
 5. Add items with status breakdown and notes
 6. View dashboard - search/filter items, see status counts
-7. View collection - items sorted A-Z, progress card visible, notes shown
-8. From collection, tap Add - collection auto-selected
-9. Use Planning tab - view Progress Queue, create/edit/delete goals
-10. Add wishlist items with game dropdown
-11. Tap "See All" to view full list of items needing paint
-12. Edit profile - change username, avatar
-13. Set custom background image from Profile tab
-14. Toggle dark mode - close and reopen app, preference persists
-15. Follow other users and view their profiles
+7. View collections - drag to reorder, search items
+8. View collection detail - items sorted A-Z, progress card visible, notes shown
+9. From collection, tap Add - collection auto-selected
+10. Use Planning tab - view Progress Queue, create/edit/delete goals
+11. Add wishlist items with game dropdown
+12. Tap "See All" to view full list of items needing paint
+13. Edit profile - change username, avatar
+14. Set custom background image from Profile tab
+15. Toggle dark mode - close and reopen app, preference persists
+16. Follow other users and view their profiles
+17. Access Help & Feedback from Profile tab

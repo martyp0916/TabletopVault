@@ -1,6 +1,8 @@
 import React from 'react';
+import { Platform, StyleSheet } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs } from 'expo-router';
+import { BlurView } from 'expo-blur';
 
 import Colors from '@/constants/Colors';
 import { useTheme } from '@/lib/theme';
@@ -9,7 +11,7 @@ function TabBarIcon(props: {
   name: React.ComponentProps<typeof FontAwesome>['name'];
   color: string;
 }) {
-  return <FontAwesome size={24} style={{ marginBottom: -3 }} {...props} />;
+  return <FontAwesome size={22} style={{ marginBottom: -2 }} {...props} />;
 }
 
 export default function TabLayout() {
@@ -23,8 +25,24 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.tint,
         tabBarInactiveTintColor: colors.tabIconDefault,
         tabBarStyle: {
-          backgroundColor: hasBackground ? 'rgba(0,0,0,0.6)' : colors.card,
-          borderTopColor: hasBackground ? 'transparent' : colors.border,
+          position: 'absolute',
+          borderTopWidth: 0,
+          elevation: 0,
+          backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.cardSolid,
+          height: 85,
+          paddingBottom: 30,
+        },
+        tabBarBackground: () =>
+          Platform.OS === 'ios' ? (
+            <BlurView
+              intensity={100}
+              tint={isDarkMode ? 'dark' : 'light'}
+              style={StyleSheet.absoluteFill}
+            />
+          ) : null,
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
         },
         headerShown: false,
         sceneStyle: {

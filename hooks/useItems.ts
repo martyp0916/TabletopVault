@@ -24,6 +24,7 @@ import {
   LIMITS,
 } from '@/lib/validation';
 import { rateLimiter, getRateLimitKey } from '@/lib/rateLimiter';
+import { FREE_TIER_LIMITS } from '@/lib/premium';
 
 // Define allowed fields for item creation/update (prevent mass assignment)
 const ALLOWED_CREATE_FIELDS = [
@@ -125,7 +126,7 @@ function validateItemData(
   return { isValid: true, sanitized };
 }
 
-export function useItems(userId: string | undefined, collectionId?: string) {
+export function useItems(userId: string | undefined, collectionId?: string, isPremium: boolean = true) {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -185,6 +186,7 @@ export function useItems(userId: string | undefined, collectionId?: string) {
   /**
    * Create a new item
    * SECURITY: Validates all fields and applies rate limiting
+   * PREMIUM: Checks item limit per collection for free users
    */
   const createItem = async (item: {
     collection_id: string;
@@ -201,6 +203,17 @@ export function useItems(userId: string | undefined, collectionId?: string) {
     notes?: string;
   }) => {
     if (!userId) return { error: new Error('Not authenticated') };
+
+    // PREMIUM: Check item limit per collection for free users
+    if (!isPremium) {
+      const collectionItemCount = items.filter(i => i.collection_id === item.collection_id).length;
+      if (collectionItemCount >= FREE_TIER_LIMITS.MAX_ITEMS_PER_COLLECTION) {
+        return {
+          error: new Error('LIMIT_REACHED'),
+          limitType: 'items' as const,
+        };
+      }
+    }
 
     // SECURITY: Validate and sanitize all input
     const validation = validateItemData(item, ALLOWED_CREATE_FIELDS, true);
@@ -299,6 +312,59 @@ export function useItems(userId: string | undefined, collectionId?: string) {
     return { error };
   };
 
+  /**
+   * Duplicate an item
+   * SECURITY: Validates ID format and creates a copy with a new ID
+   */
+  const duplicateItem = async (id: string) => {
+    if (!userId) return { error: new Error('Not authenticated') };
+
+    // SECURITY: Validate ID format
+    const idValidation = validateUUID(id);
+    if (!idValidation.isValid) {
+      return { error: new Error('Invalid item ID') };
+    }
+
+    // SECURITY: Rate limit creates
+    const rateLimitKey = getRateLimitKey('data:create', userId);
+    const rateLimitResult = rateLimiter.check(rateLimitKey, 'data:create');
+    if (!rateLimitResult.allowed) {
+      return { error: new Error(rateLimitResult.error || 'Too many requests. Please slow down.') };
+    }
+
+    // Fetch the original item
+    const { data: original, error: fetchError } = await supabase
+      .from('items')
+      .select('*')
+      .eq('id', idValidation.sanitizedValue)
+      .single();
+
+    if (fetchError || !original) {
+      return { error: new Error('Item not found') };
+    }
+
+    // Create a copy without id, created_at, updated_at
+    const { id: _id, created_at, updated_at, ...itemData } = original;
+
+    // Append "(Copy)" to the name
+    const newName = `${itemData.name} (Copy)`;
+
+    const { data, error } = await supabase
+      .from('items')
+      .insert({
+        ...itemData,
+        name: newName,
+      })
+      .select()
+      .single();
+
+    if (!error && data) {
+      setItems(prev => [data, ...prev]);
+    }
+
+    return { data, error };
+  };
+
   return {
     items,
     loading,
@@ -307,6 +373,7 @@ export function useItems(userId: string | undefined, collectionId?: string) {
     createItem,
     updateItem,
     deleteItem,
+    duplicateItem,
   };
 }
 

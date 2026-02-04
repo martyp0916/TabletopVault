@@ -7,6 +7,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
 import { useItem, useItems } from '@/hooks/useItems';
+import { useCollection } from '@/hooks/useCollections';
 import { ItemStatus } from '@/types/database';
 import { supabase } from '@/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
@@ -25,6 +26,7 @@ export default function EditItemScreen() {
 
   const { user } = useAuth();
   const { item, loading: itemLoading } = useItem(id as string);
+  const { collection, loading: collectionLoading } = useCollection(item?.collection_id);
   const { updateItem } = useItems(user?.id);
 
   // Form state
@@ -358,7 +360,7 @@ export default function EditItemScreen() {
     ]);
   };
 
-  if (itemLoading) {
+  if (itemLoading || collectionLoading) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" />
@@ -372,6 +374,22 @@ export default function EditItemScreen() {
         <Text style={{ color: colors.text }}>Item not found</Text>
         <Pressable onPress={() => router.back()} style={{ marginTop: 16 }}>
           <Text style={{ color: '#991b1b' }}>Go back</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  // Lock check - prevent editing items in locked collections
+  if (collection?.is_locked) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
+        <FontAwesome name="lock" size={48} color={colors.textSecondary} />
+        <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginTop: 16 }}>Collection Locked</Text>
+        <Text style={{ color: colors.textSecondary, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 }}>
+          This item belongs to a locked collection and cannot be edited. Unlock the collection first to make changes.
+        </Text>
+        <Pressable onPress={() => router.back()} style={{ marginTop: 20 }}>
+          <Text style={{ color: '#991b1b', fontWeight: '600' }}>Go back</Text>
         </Pressable>
       </View>
     );
@@ -517,7 +535,7 @@ export default function EditItemScreen() {
 
               {/* Assembled */}
               <View style={styles.statusCountRow}>
-                <View style={[styles.statusDot, { backgroundColor: '#f59e0b' }]} />
+                <View style={[styles.statusDot, { backgroundColor: '#991b1b' }]} />
                 <Text style={[styles.statusCountLabel, { color: colors.text }]}>Assembled</Text>
                 <TextInput
                   style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}

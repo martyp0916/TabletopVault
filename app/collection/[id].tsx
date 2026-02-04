@@ -6,11 +6,12 @@ import Colors from '@/constants/Colors';
 import { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
+import { usePremium } from '@/lib/premium';
 import { useCollection, useCollections } from '@/hooks/useCollections';
 import { useItems } from '@/hooks/useItems';
 import { supabase } from '@/lib/supabase';
 import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus, getEffectiveStatus, Item } from '@/types/database';
-import { exportToCSV, exportToPDF, ExportCollection } from '@/lib/exportData';
+import { exportToPDF, ExportCollection } from '@/lib/exportData';
 
 // Map of item IDs to their primary photo URLs
 type ItemPhotoMap = Record<string, string>;
@@ -21,9 +22,10 @@ export default function CollectionDetailScreen() {
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
   const { user } = useAuth();
+  const { isPremium, showUpgradePrompt } = usePremium();
   const { collection, loading: collectionLoading, refresh: refreshCollection } = useCollection(id as string);
   const { items, loading: itemsLoading, deleteItem, refresh: refreshItems } = useItems(user?.id, id as string);
-  const { deleteCollection, updateCollection } = useCollections(user?.id);
+  const { deleteCollection, updateCollection } = useCollections(user?.id, isPremium);
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
@@ -175,8 +177,14 @@ export default function CollectionDetailScreen() {
     router.push(`/(tabs)/add?collectionId=${id}`);
   };
 
-  const handleExportCollection = async (format: 'csv' | 'pdf') => {
+  const handleExportCollection = async () => {
     if (!collection) return;
+
+    // Check premium status
+    if (!isPremium) {
+      showUpgradePrompt('export');
+      return;
+    }
 
     setExporting(true);
 
@@ -187,39 +195,15 @@ export default function CollectionDetailScreen() {
       }];
 
       const collectionName = collection.description || collection.name;
+      const sanitizedName = collectionName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-');
 
-      if (format === 'csv') {
-        await exportToCSV(exportData, `${collectionName.replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`);
-      } else {
-        await exportToPDF(exportData, collectionName);
-      }
+      await exportToPDF(exportData, collectionName, sanitizedName);
     } catch (error) {
       console.error('Export error:', error);
       Alert.alert('Export Failed', 'There was an error exporting this collection. Please try again.');
     }
 
     setExporting(false);
-  };
-
-  const showExportOptions = () => {
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ['Cancel', 'Export as CSV', 'Export as PDF'],
-          cancelButtonIndex: 0,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 1) handleExportCollection('csv');
-          if (buttonIndex === 2) handleExportCollection('pdf');
-        }
-      );
-    } else {
-      Alert.alert('Export Collection', 'Choose export format', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Export as CSV', onPress: () => handleExportCollection('csv') },
-        { text: 'Export as PDF', onPress: () => handleExportCollection('pdf') },
-      ]);
-    }
   };
 
   const onRefresh = useCallback(async () => {
@@ -377,7 +361,7 @@ export default function CollectionDetailScreen() {
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Unbuilt</Text>
             </View>
             <View style={styles.statusItem}>
-              <View style={[styles.statusDotSmall, { backgroundColor: '#f59e0b' }]} />
+              <View style={[styles.statusDotSmall, { backgroundColor: '#991b1b' }]} />
               <Text style={[styles.statusCount, { color: colors.text }]}>{assembledTotal}</Text>
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Built</Text>
             </View>
@@ -575,15 +559,31 @@ export default function CollectionDetailScreen() {
         {/* Action Buttons */}
         <View style={styles.actionsSection}>
           <Pressable
-            style={[styles.editButton, { backgroundColor: '#991b1b' }]}
-            onPress={() => router.push(`/collection/edit/${id}`)}
+            style={[
+              styles.editButton,
+              { backgroundColor: collection.is_locked ? colors.card : '#991b1b' },
+              collection.is_locked && { borderWidth: 1, borderColor: colors.border },
+            ]}
+            onPress={() => {
+              if (collection.is_locked) {
+                Alert.alert('Collection Locked', 'Unlock this collection to edit it.');
+                return;
+              }
+              router.push(`/collection/edit/${id}`);
+            }}
           >
-            <FontAwesome name="pencil" size={16} color="#fff" />
-            <Text style={styles.editButtonText}>Edit</Text>
+            <FontAwesome
+              name={collection.is_locked ? 'lock' : 'pencil'}
+              size={16}
+              color={collection.is_locked ? colors.textSecondary : '#fff'}
+            />
+            <Text style={[styles.editButtonText, { color: collection.is_locked ? colors.textSecondary : '#fff' }]}>
+              {collection.is_locked ? 'Locked' : 'Edit'}
+            </Text>
           </Pressable>
           <Pressable
-            style={[styles.exportButton, { backgroundColor: '#0891b2' }]}
-            onPress={showExportOptions}
+            style={[styles.exportButton, { backgroundColor: '#991b1b' }]}
+            onPress={handleExportCollection}
             disabled={exporting}
           >
             {exporting ? (
@@ -591,7 +591,7 @@ export default function CollectionDetailScreen() {
             ) : (
               <>
                 <FontAwesome name="download" size={16} color="#fff" />
-                <Text style={styles.exportButtonText}>Export</Text>
+                <Text style={styles.exportButtonText}>Export Collection Data</Text>
               </>
             )}
           </Pressable>
@@ -641,8 +641,8 @@ function getStatusColor(status: string): string {
     case 'painted': return '#10b981';
     case 'based': return '#8b5cf6';
     case 'primed': return '#6366f1';
-    case 'assembled': return '#f59e0b';
-    case 'wip': return '#f59e0b';
+    case 'assembled': return '#991b1b';
+    case 'wip': return '#991b1b';
     case 'nib': return '#ef4444';
     default: return '#9ca3af';
   }
@@ -950,11 +950,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
+    paddingHorizontal: 8,
     borderRadius: 12,
-    gap: 8,
+    gap: 6,
   },
   exportButtonText: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '600',
     color: '#fff',
   },

@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, Pressable, Switch, ActivityIndicator, Alert, Image, View, ActionSheetIOS, Platform, ImageBackground } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, Switch, ActivityIndicator, Alert, Image, View, ActionSheetIOS, Platform, ImageBackground, Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
@@ -11,13 +11,20 @@ import { useTheme } from '@/lib/theme';
 import { useProfile } from '@/hooks/useProfile';
 import { useCollections } from '@/hooks/useCollections';
 import { useItemStats, useItems } from '@/hooks/useItems';
+import { usePremium, FREE_TIER_LIMITS } from '@/lib/premium';
 import { supabase } from '@/lib/supabase';
-import { exportToCSV, exportToPDF, ExportCollection } from '@/lib/exportData';
+import { exportToPDF, ExportCollection } from '@/lib/exportData';
+import {
+  requestNotificationPermissions,
+  areNotificationsEnabled,
+  cancelAllNotifications,
+} from '@/lib/notifications';
 
 export default function ProfileScreen() {
   const { isDarkMode, themeMode, setThemeMode, backgroundImageUrl, setBackgroundImagePath, refreshBackgroundImage } = useTheme();
   const hasBackground = !!backgroundImageUrl;
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [checkingNotifications, setCheckingNotifications] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [currentBackgroundUrl, setCurrentBackgroundUrl] = useState<string | null>(null);
@@ -28,7 +35,8 @@ export default function ProfileScreen() {
 
   const { user, signOut } = useAuth();
   const { profile, loading: profileLoading, refresh: refreshProfile, updateProfile } = useProfile(user?.id);
-  const { collections } = useCollections(user?.id);
+  const { isPremium, showUpgradePrompt } = usePremium();
+  const { collections } = useCollections(user?.id, isPremium);
   const { stats } = useItemStats(user?.id);
 
   // Fetch avatar signed URL
@@ -73,6 +81,57 @@ export default function ProfileScreen() {
       refreshProfile();
     }, [])
   );
+
+  // Check notification permissions status
+  const checkNotificationStatus = useCallback(async () => {
+    setCheckingNotifications(true);
+    const enabled = await areNotificationsEnabled();
+    setNotificationsEnabled(enabled);
+    setCheckingNotifications(false);
+  }, []);
+
+  useEffect(() => {
+    if (isPremium) {
+      checkNotificationStatus();
+    }
+  }, [isPremium, checkNotificationStatus]);
+
+  // Also check when screen comes into focus (in case user changed in Settings)
+  useFocusEffect(
+    useCallback(() => {
+      if (isPremium) {
+        checkNotificationStatus();
+      }
+    }, [isPremium, checkNotificationStatus])
+  );
+
+  const handleNotificationToggle = async (value: boolean) => {
+    if (value) {
+      // Request permissions
+      const granted = await requestNotificationPermissions();
+      if (granted) {
+        setNotificationsEnabled(true);
+      } else {
+        // User denied - offer to open settings
+        Alert.alert(
+          'Notifications Disabled',
+          'To enable goal deadline notifications, please allow notifications in your device settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Open Settings',
+              onPress: () => Linking.openSettings(),
+            },
+          ]
+        );
+      }
+    } else {
+      // Cancel all notifications
+      await cancelAllNotifications();
+      setNotificationsEnabled(false);
+      Alert.alert('Notifications Disabled', 'Goal deadline notifications have been turned off.');
+    }
+  };
 
   const pickBackground = async (useCamera: boolean) => {
     if (useCamera) {
@@ -397,7 +456,7 @@ export default function ProfileScreen() {
   };
 
   // Export functions
-  const handleExportData = async (format: 'csv' | 'pdf') => {
+  const handleExportAllCollections = async () => {
     if (collections.length === 0) {
       Alert.alert('No Data', 'You don\'t have any collections to export.');
       return;
@@ -420,11 +479,7 @@ export default function ProfileScreen() {
         items: (allItems || []).filter((item) => item.collection_id === collection.id),
       }));
 
-      if (format === 'csv') {
-        await exportToCSV(exportCollections, `tabletopvault-${Date.now()}`);
-      } else {
-        await exportToPDF(exportCollections, 'TabletopVault Collections');
-      }
+      await exportToPDF(exportCollections, 'TabletopVault Collections', 'TabletopVault-All-Collections');
     } catch (error) {
       console.error('Export error:', error);
       Alert.alert('Export Failed', 'There was an error exporting your data. Please try again.');
@@ -433,23 +488,101 @@ export default function ProfileScreen() {
     setExporting(false);
   };
 
-  const showExportOptions = () => {
+  const handleExportSingleCollection = async (collectionId: string) => {
+    const collection = collections.find(c => c.id === collectionId);
+    if (!collection) return;
+
+    setExporting(true);
+
+    try {
+      const { data: collectionItems, error } = await supabase
+        .from('items')
+        .select('*')
+        .eq('collection_id', collectionId);
+
+      if (error) throw error;
+
+      const exportData: ExportCollection[] = [{
+        ...collection,
+        items: collectionItems || [],
+      }];
+
+      const collectionName = collection.description || collection.name;
+      const sanitizedName = collectionName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-');
+
+      await exportToPDF(exportData, collectionName, sanitizedName);
+    } catch (error) {
+      console.error('Export error:', error);
+      Alert.alert('Export Failed', 'There was an error exporting this collection. Please try again.');
+    }
+
+    setExporting(false);
+  };
+
+  const showCollectionPicker = () => {
+    const getCollectionLabel = (c: typeof collections[0]) => {
+      return c.description ? `${c.name} - ${c.description}` : c.name;
+    };
+
     if (Platform.OS === 'ios') {
+      const collectionOptions = ['Cancel', ...collections.map(getCollectionLabel)];
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options: ['Cancel', 'Export as CSV', 'Export as PDF'],
+          options: collectionOptions,
           cancelButtonIndex: 0,
+          title: 'Select Collection',
         },
         (buttonIndex) => {
-          if (buttonIndex === 1) handleExportData('csv');
-          if (buttonIndex === 2) handleExportData('pdf');
+          if (buttonIndex > 0) {
+            const selectedCollection = collections[buttonIndex - 1];
+            handleExportSingleCollection(selectedCollection.id);
+          }
         }
       );
     } else {
-      Alert.alert('Export Data', 'Choose export format', [
+      Alert.alert(
+        'Select Collection',
+        'Choose a collection to export',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          ...collections.map(c => ({
+            text: getCollectionLabel(c),
+            onPress: () => handleExportSingleCollection(c.id),
+          })),
+        ]
+      );
+    }
+  };
+
+  const showExportOptions = () => {
+    // Check premium status
+    if (!isPremium) {
+      showUpgradePrompt('export');
+      return;
+    }
+
+    if (collections.length === 0) {
+      Alert.alert('No Data', 'You don\'t have any collections to export.');
+      return;
+    }
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Export All Collections', 'Choose a Collection'],
+          cancelButtonIndex: 0,
+          title: 'Export Collection Data',
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) handleExportAllCollections();
+          if (buttonIndex === 2) showCollectionPicker();
+        }
+      );
+    } else {
+      Alert.alert('Export Collection Data', 'What would you like to export?', [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Export as CSV', onPress: () => handleExportData('csv') },
-        { text: 'Export as PDF', onPress: () => handleExportData('pdf') },
+        { text: 'Export All Collections', onPress: () => handleExportAllCollections() },
+        { text: 'Choose a Collection', onPress: () => showCollectionPicker() },
       ]);
     }
   };
@@ -538,6 +671,49 @@ export default function ProfileScreen() {
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Collections</Text>
           </View>
         </View>
+      </View>
+
+      {/* Premium Section */}
+      <View style={styles.section}>
+        <View style={[styles.sectionTitleContainer, hasBackground && { backgroundColor: colors.card }]}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>SUBSCRIPTION</Text>
+        </View>
+
+        {isPremium ? (
+          <View style={[styles.premiumCard, { backgroundColor: colors.card }]}>
+            <View style={styles.premiumBadge}>
+              <FontAwesome name="star" size={20} color="#991b1b" />
+            </View>
+            <View style={styles.premiumContent}>
+              <Text style={[styles.premiumTitle, { color: colors.text }]}>Premium Active</Text>
+              <Text style={[styles.premiumSubtext, { color: colors.textSecondary }]}>
+                Unlimited collections, items & planning features
+              </Text>
+            </View>
+            <FontAwesome name="check-circle" size={20} color="#10b981" />
+          </View>
+        ) : (
+          <Pressable
+            style={[styles.upgradeCard, { backgroundColor: colors.card }]}
+            onPress={() => showUpgradePrompt('planning')}
+          >
+            <View style={styles.upgradeCardLeft}>
+              <View style={styles.upgradeBadge}>
+                <FontAwesome name="star" size={20} color="#991b1b" />
+              </View>
+              <View style={styles.upgradeContent}>
+                <Text style={[styles.upgradeTitle, { color: colors.text }]}>Free Plan</Text>
+                <Text style={[styles.upgradeSubtext, { color: colors.textSecondary }]}>
+                  {FREE_TIER_LIMITS.MAX_COLLECTIONS} collections, {FREE_TIER_LIMITS.MAX_ITEMS_PER_COLLECTION} items each
+                </Text>
+              </View>
+            </View>
+            <View style={styles.upgradeButton}>
+              <Text style={styles.upgradeButtonText}>Upgrade</Text>
+              <FontAwesome name="chevron-right" size={12} color="#fff" />
+            </View>
+          </Pressable>
+        )}
       </View>
 
       {/* Customization Section */}
@@ -634,21 +810,32 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Notifications Toggle */}
-        <View style={[styles.settingRow, { backgroundColor: colors.card }]}>
-          <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: '#f59e0b' }]}>
-              <FontAwesome name="bell" size={16} color="#fff" />
+        {/* Notifications Toggle - Premium Only */}
+        {isPremium && (
+          <View style={[styles.settingRow, { backgroundColor: colors.card }]}>
+            <View style={styles.settingLeft}>
+              <View style={[styles.settingIcon, { backgroundColor: '#991b1b' }]}>
+                <FontAwesome name="bell" size={16} color="#fff" />
+              </View>
+              <View>
+                <Text style={[styles.settingText, { color: colors.text }]}>Goal Notifications</Text>
+                <Text style={[styles.settingSubtext, { color: colors.textSecondary }]}>
+                  Reminders for goal deadlines
+                </Text>
+              </View>
             </View>
-            <Text style={[styles.settingText, { color: colors.text }]}>Notifications</Text>
+            {checkingNotifications ? (
+              <ActivityIndicator size="small" color={colors.textSecondary} />
+            ) : (
+              <Switch
+                value={notificationsEnabled}
+                onValueChange={handleNotificationToggle}
+                trackColor={{ false: colors.border, true: '#10b981' }}
+                thumbColor="#fff"
+              />
+            )}
           </View>
-          <Switch
-            value={notificationsEnabled}
-            onValueChange={setNotificationsEnabled}
-            trackColor={{ false: '#ef4444', true: '#10b981' }}
-            thumbColor="#fff"
-          />
-        </View>
+        )}
       </View>
 
       {/* Account Section */}
@@ -689,10 +876,10 @@ export default function ProfileScreen() {
           disabled={exporting}
         >
           <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: '#0891b2' }]}>
+            <View style={[styles.settingIcon, { backgroundColor: '#991b1b' }]}>
               <FontAwesome name="download" size={16} color="#fff" />
             </View>
-            <Text style={[styles.settingText, { color: colors.text }]}>Export Data</Text>
+            <Text style={[styles.settingText, { color: colors.text }]}>Export Collection Data</Text>
           </View>
           {exporting ? (
             <ActivityIndicator size="small" color={colors.textSecondary} />
@@ -761,7 +948,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   title: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: '800',
   },
   userCard: {
@@ -807,11 +994,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   userName: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: '800',
   },
   userEmail: {
-    fontSize: 14,
+    fontSize: 15,
     marginTop: 4,
   },
   memberSince: {
@@ -832,11 +1019,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   statValue: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: '800',
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 13,
     marginTop: 2,
   },
   statDivider: {
@@ -980,5 +1167,79 @@ const styles = StyleSheet.create({
   version: {
     textAlign: 'center',
     fontSize: 12,
+  },
+  premiumCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    gap: 12,
+  },
+  premiumBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  premiumContent: {
+    flex: 1,
+  },
+  premiumTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  premiumSubtext: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  upgradeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  upgradeCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  upgradeBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  upgradeContent: {
+    flex: 1,
+  },
+  upgradeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  upgradeSubtext: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  upgradeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#991b1b',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  upgradeButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

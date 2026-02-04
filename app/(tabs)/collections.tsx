@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator, TextInput, Modal, RefreshControl, Image, ActionSheetIOS, Platform, Alert, View } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator, TextInput, Modal, RefreshControl, Image, ActionSheetIOS, Platform, Alert, View, KeyboardAvoidingView } from 'react-native';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
+import { usePremium } from '@/lib/premium';
 import { useCollections } from '@/hooks/useCollections';
 import { supabase } from '@/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
@@ -16,11 +17,17 @@ import { Collection, Item } from '@/types/database';
 const GAME_LIST = [
   'Battle Tech',
   'Bolt Action',
+  'Dropfleet Commander',
+  'Dropzone Commander',
+  'Dystopian Wars',
+  'Fallout Wasteland Warfare',
   'Halo Flashpoint',
   'Horus Heresy',
+  'Kings of War',
   'Marvel Crisis Protocol',
   'Star Wars Legion',
   'Star Wars Shatterpoint',
+  'Warmachine',
   'Warhammer 40K',
   'Warhammer 40K: Kill Team',
   'Warhammer Age of Sigmar',
@@ -29,18 +36,18 @@ const GAME_LIST = [
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48 - 12) / 2;
 
-// Colors for collections (cycle through these) - darker, more dramatic palette
+// Colors for collections (cycle through these) - cool, modern palette
 const COLLECTION_COLORS = [
-  '#991b1b', // Crimson
-  '#7c3aed', // Purple
-  '#0891b2', // Cyan/teal
-  '#b45309', // Amber/bronze
+  '#991b1b', // Crimson (primary)
+  '#b91c1c', // Light crimson
+  '#7f1d1d', // Dark crimson
+  '#dc2626', // Red
+  '#7c3aed', // Violet
+  '#6366f1', // Indigo
+  '#2563eb', // Blue
   '#059669', // Emerald
-  '#be185d', // Magenta
-  '#4338ca', // Indigo
-  '#65a30d', // Lime
-  '#c2410c', // Orange
-  '#6d28d9', // Violet
+  '#d97706', // Amber
+  '#9333ea', // Purple
 ];
 
 export default function CollectionsScreen() {
@@ -48,6 +55,7 @@ export default function CollectionsScreen() {
   const hasBackground = !!backgroundImageUrl;
   const [showModal, setShowModal] = useState(false);
   const [selectedGame, setSelectedGame] = useState('');
+  const [customGameName, setCustomGameName] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const [newDescription, setNewDescription] = useState('');
   const [creating, setCreating] = useState(false);
@@ -55,7 +63,8 @@ export default function CollectionsScreen() {
 
   const colors = isDarkMode ? Colors.dark : Colors.light;
   const { user } = useAuth();
-  const { collections, loading, createCollection, updateCollection, refresh, reorderCollections } = useCollections(user?.id);
+  const { isPremium, showUpgradePrompt } = usePremium();
+  const { collections, loading, createCollection, updateCollection, refresh, reorderCollections } = useCollections(user?.id, isPremium);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [coverImageUrls, setCoverImageUrls] = useState<Record<string, string>>({});
@@ -290,16 +299,28 @@ export default function CollectionsScreen() {
   }, [refresh, fetchCounts, fetchCoverImages]);
 
   const handleCreateCollection = async () => {
-    if (!selectedGame) return;
+    const gameName = selectedGame === 'Other' ? customGameName.trim() : selectedGame;
+    if (!gameName) return;
 
     setCreating(true);
-    const { data: newCollection, error } = await createCollection(selectedGame, newDescription.trim() || undefined);
+    const result = await createCollection(gameName, newDescription.trim() || undefined);
 
-    if (error) {
+    if (result.error) {
       setCreating(false);
-      Alert.alert('Error', error.message);
+      // Check if this is a premium limit error
+      if (result.error.message === 'LIMIT_REACHED' && 'limitType' in result) {
+        setShowModal(false);
+        setSelectedGame('');
+        setNewDescription('');
+        setSelectedImage(null);
+        showUpgradePrompt('collections');
+        return;
+      }
+      Alert.alert('Error', result.error.message);
       return;
     }
+
+    const newCollection = result.data;
 
     // Upload cover image if selected
     let needsCoverImageRefresh = false;
@@ -315,6 +336,7 @@ export default function CollectionsScreen() {
     setCreating(false);
     setShowModal(false);
     setSelectedGame('');
+    setCustomGameName('');
     setNewDescription('');
     setSelectedImage(null);
 
@@ -632,23 +654,32 @@ export default function CollectionsScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowModal(false)}
       >
-        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+        <KeyboardAvoidingView
+          style={[styles.modalContainer, { backgroundColor: colors.background }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+        >
           <View style={styles.modalHeader}>
-            <Pressable onPress={() => { setShowModal(false); setShowDropdown(false); setSelectedImage(null); }}>
+            <Pressable onPress={() => { setShowModal(false); setShowDropdown(false); setSelectedImage(null); setCustomGameName(''); }}>
               <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
             </Pressable>
             <Text style={[styles.modalTitle, { color: colors.text }]}>New Collection</Text>
-            <Pressable onPress={handleCreateCollection} disabled={creating || !selectedGame}>
+            <Pressable onPress={handleCreateCollection} disabled={creating || (!selectedGame || (selectedGame === 'Other' && !customGameName.trim()))}>
               <Text style={[
                 styles.modalSave,
-                { color: selectedGame ? '#991b1b' : colors.textSecondary }
+                { color: (selectedGame && (selectedGame !== 'Other' || customGameName.trim())) ? '#991b1b' : colors.textSecondary }
               ]}>
                 {creating ? 'Saving...' : 'Save'}
               </Text>
             </Pressable>
           </View>
 
-          <View style={styles.modalContent}>
+          <ScrollView
+            style={styles.modalContent}
+            contentContainerStyle={styles.modalContentContainer}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.inputGroup}>
               <Text style={[styles.label, { color: colors.textSecondary }]}>Game</Text>
               <Pressable
@@ -659,7 +690,9 @@ export default function CollectionsScreen() {
                   styles.dropdownText,
                   { color: selectedGame ? colors.text : colors.textSecondary }
                 ]}>
-                  {selectedGame || 'Select a game...'}
+                  {selectedGame === 'Other' && customGameName.trim()
+                    ? customGameName.trim()
+                    : (selectedGame || 'Select a game...')}
                 </Text>
                 <FontAwesome
                   name={showDropdown ? 'chevron-up' : 'chevron-down'}
@@ -681,6 +714,7 @@ export default function CollectionsScreen() {
                         ]}
                         onPress={() => {
                           setSelectedGame(game);
+                          setCustomGameName('');
                           setShowDropdown(false);
                         }}
                       >
@@ -695,8 +729,42 @@ export default function CollectionsScreen() {
                         )}
                       </Pressable>
                     ))}
+                    {/* Other option */}
+                    <Pressable
+                      style={[
+                        styles.dropdownItem,
+                        selectedGame === 'Other' && styles.dropdownItemSelected,
+                        { borderBottomColor: colors.border }
+                      ]}
+                      onPress={() => {
+                        setSelectedGame('Other');
+                        setShowDropdown(false);
+                      }}
+                    >
+                      <Text style={[
+                        styles.dropdownItemText,
+                        { color: selectedGame === 'Other' ? '#991b1b' : colors.text }
+                      ]}>
+                        Other (type your own)
+                      </Text>
+                      {selectedGame === 'Other' && (
+                        <FontAwesome name="check" size={14} color="#991b1b" />
+                      )}
+                    </Pressable>
                   </ScrollView>
                 </View>
+              )}
+
+              {/* Custom game input when Other is selected */}
+              {selectedGame === 'Other' && (
+                <TextInput
+                  style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border, marginTop: 8 }]}
+                  placeholder="Enter game name..."
+                  placeholderTextColor={colors.textSecondary}
+                  value={customGameName}
+                  onChangeText={setCustomGameName}
+                  autoFocus
+                />
               )}
             </View>
 
@@ -740,8 +808,8 @@ export default function CollectionsScreen() {
                 numberOfLines={3}
               />
             </View>
-          </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
     </GestureHandlerRootView>
   );
@@ -774,12 +842,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 15,
     textTransform: 'uppercase',
     letterSpacing: 2,
   },
   title: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: '800',
     marginTop: 4,
   },
@@ -788,16 +856,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 24,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 2,
+    padding: 18,
+    borderRadius: 16,
+    borderWidth: 1.5,
     borderStyle: 'dashed',
-    gap: 8,
+    gap: 10,
     backgroundColor: 'transparent',
   },
   addButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
   },
   dragHint: {
     textAlign: 'center',
@@ -815,14 +883,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 24,
     marginTop: 12,
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
-    padding: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
   },
   listCardImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
+    width: 56,
+    height: 56,
+    borderRadius: 12,
     overflow: 'hidden',
   },
   listCardImageContent: {
@@ -975,9 +1045,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   modalContent: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  modalContentContainer: {
     padding: 24,
     gap: 20,
-    backgroundColor: 'transparent',
+    paddingBottom: 40,
   },
   inputGroup: {
     gap: 8,
@@ -1068,10 +1142,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 24,
     marginBottom: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
   },
   searchInput: {
     flex: 1,

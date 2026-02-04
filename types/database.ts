@@ -89,11 +89,11 @@ export const GAME_COLORS: Record<GameSystem, string> = {
 
 export const STATUS_COLORS: Record<ItemStatus, string> = {
   nib: '#ef4444',
-  assembled: '#f59e0b',
+  assembled: '#991b1b',
   primed: '#6366f1',
   painted: '#10b981',
   based: '#8b5cf6',
-  wip: '#f59e0b',
+  wip: '#991b1b',
 };
 
 // Social Features Types
