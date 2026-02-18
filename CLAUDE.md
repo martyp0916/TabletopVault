@@ -4,51 +4,67 @@
 
 **App Name**: TabletopVault
 **Purpose**: Mobile app for tabletop gaming collectors to track inventory, share collections, plan painting projects, and connect with other hobbyists
-**Target Games**: Warhammer 40K, Warhammer Age of Sigmar, Horus Heresy, Kill Team, Star Wars Legion, Star Wars Shatterpoint, Halo Flashpoint, Bolt Action, Marvel Crisis Protocol, Battle Tech
+**Target Games**: Warhammer 40K, Warhammer Age of Sigmar, Horus Heresy, Kill Team, Star Wars Legion, Star Wars Shatterpoint, Halo Flashpoint, Bolt Action, Marvel Crisis Protocol, Battle Tech, and more
 **Tech Stack**: React Native + Expo + TypeScript + Supabase
 **Repository**: https://github.com/martyp0916/TabletopVault
-**Last Updated**: January 30, 2025
+**Last Updated**: February 4, 2025
 
 ---
 
-## Recent Changes (January 30, 2025)
+## Recent Changes (February 4, 2025)
+
+- **Premium/Freemium Model**:
+  - Free tier: 2 collections, 5 items per collection
+  - Premium tier: Unlimited collections/items, planning tab access, export, notifications
+  - Premium context provider (`lib/premium.tsx`) with upgrade prompts
+  - Premium paywall component for Planning tab (`components/PremiumPaywall.tsx`)
+
+- **Export Collection Data (Premium Feature)**:
+  - PDF export only (CSV removed)
+  - Export single collection or all collections
+  - Accessible from collection detail and profile screens
+  - Uses expo-file-system legacy API for compatibility
+
+- **Push Notifications for Goal Deadlines (Premium Feature)**:
+  - Notifications library (`lib/notifications.ts`)
+  - Reminder notification day before deadline at 9 AM
+  - Deadline notification on due date at 9 AM
+  - Notification toggle in profile settings (premium users only)
+  - Notifications scheduled when creating/editing goals with deadlines
+  - Notifications cancelled when goals deleted or completed
+
+- **UI/UX Improvements**:
+  - Glass card components with blur effects (`components/GlassCard.tsx`)
+  - Crimson color palette refinements
+  - Keyboard handling fixes for edit collection screen
+  - Export button renamed to "Export Collection Data"
+  - Tab bar blur intensity increased
+
+- **Bug Fixes**:
+  - Fixed expo-file-system deprecated copyAsync error (switched to legacy API)
+  - Fixed keyboard covering description field in edit collection screen
+
+---
+
+## Previous Changes (January 30, 2025)
 
 - **Collection management improvements**:
   - Drag-to-reorder collections (long press and drag)
   - Collection complete/lock status badges
   - Item search within collections tab
   - Fixed scrolling issues with proper flex layout
-- **Export functionality**: CSV and PDF export for collection data (`lib/exportData.ts`)
+- **Export functionality**: Initial CSV and PDF export for collection data
 - **Help & Feedback screen**: New screen at `app/profile/help-feedback.tsx`
 - **Bug fixes**:
   - Fixed TypeScript errors (style names, type incompatibilities)
-  - Updated expo-file-system to use new class-based API (v19)
   - Fixed Supabase nested data transformation in followers/following screens
   - Removed deprecated `purchase_date` field from item detail view
 
 ---
 
-## Previous Changes (January 26, 2025)
+## Current Status: Freemium App with Premium Features
 
-- **Theme persistence**: Dark/light mode preference now saves to AsyncStorage and persists across app restarts
-- **Collection detail improvements**:
-  - Items sorted alphabetically by name
-  - Progress card showing painting percentage, progress bar, and status breakdown
-  - Item notes now visible on collection item cards (max 2 lines)
-  - Fixed black background visibility issues by using React Native View instead of themed View
-  - Reduced header padding for more compact layout
-- **Collection pre-selection**: When adding an item from within a collection, that collection is auto-selected
-- **Wishlist updates**:
-  - Game system now uses dropdown selector (matches collection games list)
-  - Removed all price/cost fields - app focuses on collection tracking, not finances
-- **Goal management**: Added visible delete button (trash icon) with confirmation dialog
-- **Keyboard handling**: Improved keyboard avoiding on Add screen for notes field
-
----
-
-## Current Status: Full Feature App with Social & Planning
-
-The app is a fully-featured tabletop collection manager with social features and planning tools. All core features are complete including inventory management, social following, progress queue, goal tracking, wishlist, export functionality, and progress dashboards. The app uses a crimson/dark theme with support for custom background images. Theme preference (dark/light mode) persists across app restarts. Collections can be reordered via drag-and-drop and marked as complete/locked.
+The app is a fully-featured tabletop collection manager with a freemium business model. Free users can manage up to 2 collections with 5 items each. Premium users get unlimited collections/items, access to the Planning tab, export functionality, and goal deadline notifications.
 
 ### What's Working
 
@@ -60,14 +76,21 @@ The app is a fully-featured tabletop collection manager with social features and
 | User logout | Working | Clears session and redirects to login |
 | Forgot password | Working | Email-based password reset flow |
 | Reset password | Working | Deep link handling for password reset |
+| **Premium Features** | | |
+| Premium context | Working | Tracks premium status, enforces limits |
+| Upgrade prompts | Working | Modal with benefits list when limits hit |
+| Planning paywall | Working | Free users see paywall instead of Planning tab |
+| Export data | Working | PDF export (premium only) |
+| Goal notifications | Working | Push notifications for deadlines (premium only) |
 | **Profile** | | |
 | Profile editing | Working | Edit username and avatar |
 | Avatar upload | Working | Camera + gallery picker for profile photos |
 | Change password | Working | Requires current password verification |
 | Custom background image | Working | Set app-wide background from Profile tab |
 | Help & Feedback | Working | Links to GitHub issues for support |
+| Notification settings | Working | Toggle goal notifications (premium only) |
 | **Collections** | | |
-| Create collection | Working | Dropdown menu with 10 supported games + cover image |
+| Create collection | Working | Dropdown menu with 16+ supported games + cover image |
 | View collections | Working | List layout with item counts, cover images, drag-to-reorder |
 | Edit collection | Working | Edit game, description, and cover image |
 | Delete collection | Working | With confirmation dialog |
@@ -76,6 +99,7 @@ The app is a fully-featured tabletop collection manager with social features and
 | Collection lock status | Working | Lock collections to prevent changes (lock badge) |
 | Drag-to-reorder | Working | Long press and drag to reorder collections |
 | Item search | Working | Search items by name within collections tab |
+| Collection limits | Working | Free tier limited to 2 collections |
 | **Items** | | |
 | Add item | Working | Models per box + status breakdown |
 | Edit item | Working | Edit name, faction, quantity, status counts, notes |
@@ -84,6 +108,7 @@ The app is a fully-featured tabletop collection manager with social features and
 | Photo upload | Working | Camera + gallery picker, uploads to Supabase Storage |
 | Status count tracking | Working | Track how many models are in each status per item |
 | Effective status display | Working | Shows "Work in Progress" for mixed states |
+| Item limits | Working | Free tier limited to 5 items per collection |
 | **Dashboard** | | |
 | Home dashboard | Working | 4-card status grid + search/filter |
 | Collection stats | Working | Shows breakdown by status |
@@ -94,29 +119,96 @@ The app is a fully-featured tabletop collection manager with social features and
 | Followers list | Working | View who follows you |
 | Following list | Working | View who you follow |
 | Follower counts | Working | Display on profile pages |
-| **Planning Tab** | | |
+| **Planning Tab (Premium)** | | |
 | Progress queue | Working | Auto-populated list of unpainted items (shows 5, "See All" for more) |
 | See All modal | Working | Full scrollable list of all items needing paint |
 | Painting goals | Working | Create goals with optional deadlines |
 | Goal progress | Working | Track current vs target count |
+| Goal notifications | Working | Push notifications for deadlines |
 | Complete goals | Working | Mark goals as finished |
 | Overall progress | Working | Percentage of models painted across all collections |
 | Game system progress | Working | Per-game-system painting progress breakdown |
 | Wishlist | Working | Track future items to buy with game system dropdown |
-| **Export** | | |
-| Export to CSV | Working | Export all collection data to CSV format |
+| **Export (Premium)** | | |
 | Export to PDF | Working | Export styled PDF with progress stats |
+| Export single collection | Working | From collection detail screen |
+| Export all collections | Working | From profile screen |
 | **UI/UX** | | |
 | Global dark mode | Working | Theme persists across app restarts via AsyncStorage |
 | Dark mode contrast | Working | Lighter card backgrounds for better visibility |
 | Text visibility | Working | Solid backgrounds for text when background image set |
 | Safe area handling | Working | Content avoids phone notch/camera area |
-| Keyboard avoiding | Working | Goal modal and Add screen adjust for keyboard |
+| Keyboard avoiding | Working | All forms adjust for keyboard |
+| Glass effects | Working | Blur effects on cards and tab bar |
 | **Collection Detail** | | |
 | Alphabetical sorting | Working | Items sorted A-Z by name |
 | Progress card | Working | Shows painting percentage, progress bar, status breakdown |
 | Item notes display | Working | Notes visible on item cards (2-line limit) |
 | Collection pre-selection | Working | Add screen auto-selects collection when navigating from collection |
+| Export button | Working | "Export Collection Data" button (premium only) |
+
+---
+
+## Premium Features
+
+### Free Tier Limits (`lib/premium.tsx`)
+```typescript
+const FREE_TIER_LIMITS = {
+  MAX_COLLECTIONS: 2,
+  MAX_ITEMS_PER_COLLECTION: 5,
+};
+```
+
+### Premium Benefits
+- Unlimited collections
+- Unlimited items per collection
+- Full Planning tab access (Progress Queue, Goals, Wishlist, Progress Stats)
+- Export collection data to PDF
+- Goal deadline push notifications
+
+### Premium Context
+- `isPremium`: Boolean indicating premium status
+- `canCreateCollection(count)`: Check if user can create more collections
+- `canCreateItem(count)`: Check if user can add more items to collection
+- `showUpgradePrompt(reason)`: Show upgrade modal with reason
+
+### Upgrade Reasons
+- `'collections'`: Hit collection limit
+- `'items'`: Hit item limit per collection
+- `'planning'`: Tried to access Planning tab
+- `'export'`: Tried to export data
+
+---
+
+## Push Notifications
+
+### Overview (`lib/notifications.ts`)
+Push notifications remind premium users about goal deadlines.
+
+### Notification Schedule
+- **Day before deadline (9 AM)**: "Goal Deadline Tomorrow! [title] is due tomorrow. You're at X/Y."
+- **Day of deadline (9 AM)**: "Goal Deadline Today! [title] is due today. You're at X/Y. Keep painting!"
+
+### Key Functions
+```typescript
+requestNotificationPermissions()  // Request permission from user
+areNotificationsEnabled()         // Check current permission status
+scheduleAllGoalNotifications(goal) // Schedule deadline + reminder
+cancelGoalNotification(goalId)    // Cancel notifications for a goal
+cancelAllNotifications()          // Cancel all scheduled notifications
+```
+
+### Integration
+- Notifications scheduled when creating/updating goals with deadlines
+- Notifications cancelled when goals are deleted or completed
+- Permission requested on first goal with deadline
+- Toggle in Profile > Settings (premium users only)
+
+### Android Configuration
+- Channel: `goal-deadlines`
+- Importance: HIGH
+- Vibration pattern enabled
+- Light color: `#991b1b` (crimson)
 
 ---
 
@@ -132,13 +224,13 @@ The app has 5 main tabs:
 
 1. **Home** - Dashboard with status overview, search/filter
 2. **Collections** - List of user's collections with drag-to-reorder and search
-3. **Add** - Form to add new items
-4. **Planning** - Progress queue, goals, wishlist, progress tracking
-5. **Profile** - User info, settings, customization, help, logout
+3. **Add** - Form to add new items (respects collection/item limits)
+4. **Planning** - Progress queue, goals, wishlist, progress tracking (Premium only)
+5. **Profile** - User info, settings, customization, export, help, logout
 
 ---
 
-## Planning Tab Features
+## Planning Tab Features (Premium Only)
 
 ### Progress Queue
 - Automatically shows all items with unpainted models (new in box, assembled, or primed)
@@ -159,6 +251,7 @@ The app has 5 main tabs:
 - Visual progress bar
 - Edit button (pencil icon) to modify goals
 - Delete button (trash icon) with confirmation dialog
+- **Push notifications** for deadlines (day before + day of)
 - Keyboard avoiding ensures input fields visible when typing
 
 ### Progress Dashboard
@@ -170,6 +263,7 @@ The app has 5 main tabs:
 - Track future items you want to purchase
 - Add item name, game system (dropdown selection), and optional notes
 - Game system uses dropdown matching supported games (no text input)
+- "Other" option allows custom game names
 - No price/cost fields - app focuses on collection tracking, not finances
 - Mark items as purchased when you buy them
 - Purchased items show with strikethrough and checkmark
@@ -189,6 +283,7 @@ The app has 5 main tabs:
 - **Item Notes Display**: Notes shown directly on item cards (max 2 lines)
 - **Add Button Integration**: "Add" button navigates to Add screen with collection pre-selected
 - **Complete/Lock Badges**: Visual indicators for collection status
+- **Export Button**: "Export Collection Data" exports single collection to PDF (Premium only)
 
 ### Technical Notes
 - Uses React Native's `View` component (not themed) to avoid auto-background issues
@@ -218,22 +313,25 @@ The app has 5 main tabs:
 
 ---
 
-## Export Functionality
+## Export Functionality (Premium Only)
 
-### CSV Export (`lib/exportData.ts`)
-- Exports all collection and item data to CSV format
-- Columns: Collection, Description, Item Name, Faction, Status, NIB, Assembled, Primed, Painted, Total Models, Notes, Date Added
-- Uses expo-file-system v19 class-based API (`Paths.document`, `File`)
-- Shares via native share sheet
-
-### PDF Export
+### PDF Export (`lib/exportData.ts`)
 - Generates styled HTML report with:
   - Header with title and export date
   - Summary stats (collections, items, models, painted %)
   - Per-collection sections with progress bars
   - Item tables with status colors
 - Uses expo-print for PDF generation
+- Uses expo-file-system legacy API for file operations
 - Shares via native share sheet
+
+### Export Options (Profile Tab)
+- **Export All Collections**: Exports all user data to single PDF
+- **Choose a Collection**: Select specific collection to export
+  - Shows collection name + description for identification
+
+### Export from Collection Detail
+- "Export Collection Data" button exports current collection to PDF
 
 ---
 
@@ -323,6 +421,11 @@ assembled: '#f59e0b' // Amber
 primed: '#6366f1'   // Indigo
 painted: '#10b981'  // Green (Battle Ready)
 wip: '#f59e0b'      // Amber (Work in Progress)
+
+// Collection Colors (for visual variety)
+'#991b1b', '#b91c1c', '#7f1d1d', '#dc2626',
+'#7c3aed', '#6366f1', '#2563eb', '#059669',
+'#d97706', '#9333ea'
 ```
 
 ---
@@ -373,14 +476,19 @@ export function getEffectiveStatus(item: Item): ItemStatus {
 6. Root layout wraps app in ImageBackground with semi-transparent overlay
 7. All tab screens have transparent backgrounds and solid containers for text visibility
 
+### Glass Effects
+- `GlassCard` component with expo-blur for frosted glass appearance
+- Tab bar uses blur effect when background image is set
+- Blur intensity configurable (default: 70 for cards, 100 for tab bar)
+
 ### Files Involved
 - `types/database.ts` - Added `background_image_url` to User interface
 - `hooks/useProfile.ts` - Added field to allowed updates
-- `lib/theme.tsx` - Theme persistence + background image support (`backgroundImageUrl`, `setBackgroundImagePath`, `refreshBackgroundImage`)
+- `lib/theme.tsx` - Theme persistence + background image support
+- `components/GlassCard.tsx` - Reusable glass effect component
 - `app/_layout.tsx` - Added ImageBackground wrapper in RootLayoutNav
-- `app/(tabs)/_layout.tsx` - Made tab bar transparent when background set
+- `app/(tabs)/_layout.tsx` - Made tab bar transparent with blur when background set
 - `app/(tabs)/profile.tsx` - Background picker in CUSTOMIZATION section
-- All tab screens - Updated with `paddingTop: 60` and background containers for text
 
 ---
 
@@ -447,14 +555,22 @@ Collections can be created for these games (dropdown menu):
 
 1. Battle Tech
 2. Bolt Action
-3. Halo Flashpoint
-4. Horus Heresy
-5. Marvel Crisis Protocol
-6. Star Wars Legion
-7. Star Wars Shatterpoint
-8. Warhammer 40K
-9. Warhammer 40K: Kill Team
-10. Warhammer Age of Sigmar
+3. Dropfleet Commander
+4. Dropzone Commander
+5. Dystopian Wars
+6. Fallout Wasteland Warfare
+7. Halo Flashpoint
+8. Horus Heresy
+9. Kings of War
+10. Marvel Crisis Protocol
+11. Star Wars Legion
+12. Star Wars Shatterpoint
+13. Warmachine
+14. Warhammer 40K
+15. Warhammer 40K: Kill Team
+16. Warhammer Age of Sigmar
+
+*Wishlist also supports "Other" option for custom game names*
 
 ---
 
@@ -470,14 +586,14 @@ TabletopVault/
 │   │   ├── forgot-password.tsx   # Forgot password screen
 │   │   └── reset-password.tsx    # Reset password (deep link)
 │   ├── (tabs)/                   # Main tab navigation
-│   │   ├── _layout.tsx           # Tab bar (transparent when background set)
+│   │   ├── _layout.tsx           # Tab bar (blur effect when background set)
 │   │   ├── index.tsx             # Home dashboard + search/filter
 │   │   ├── collections.tsx       # Collections list + drag-to-reorder + search
 │   │   ├── add.tsx               # Add item form + status counts
-│   │   ├── planning.tsx          # Progress queue, goals, wishlist, progress
-│   │   └── profile.tsx           # User profile, settings, customization
+│   │   ├── planning.tsx          # Progress queue, goals, wishlist, progress (Premium)
+│   │   └── profile.tsx           # User profile, settings, export, notifications
 │   ├── collection/
-│   │   ├── [id].tsx              # Collection detail + status breakdown
+│   │   ├── [id].tsx              # Collection detail + export button
 │   │   └── edit/
 │   │       └── [id].tsx          # Edit collection + cover image
 │   ├── item/
@@ -498,12 +614,14 @@ TabletopVault/
 │   ├── Themed.tsx                # Theme-aware Text/View components
 │   ├── FollowButton.tsx          # Follow/unfollow button component
 │   ├── UserAvatar.tsx            # User avatar display component
+│   ├── GlassCard.tsx             # Glass effect card with blur
+│   ├── PremiumPaywall.tsx        # Paywall for Planning tab (free users)
 │   └── useColorScheme.ts         # System color scheme hook
 ├── constants/
 │   └── Colors.ts                 # Crimson theme colors (Battle Ready Edition)
 ├── hooks/
-│   ├── useCollections.ts         # Collection CRUD with validation + reorder
-│   ├── useItems.ts               # Item CRUD with validation + stats
+│   ├── useCollections.ts         # Collection CRUD with validation + reorder + limits
+│   ├── useItems.ts               # Item CRUD with validation + stats + limits
 │   ├── useProfile.ts             # Profile operations with validation
 │   ├── useFollows.ts             # Follow/unfollow operations
 │   ├── usePaintQueue.ts          # Paint queue management (legacy, not used)
@@ -512,7 +630,9 @@ TabletopVault/
 │   └── useWishlist.ts            # Wishlist CRUD, mark as purchased
 ├── lib/
 │   ├── auth.tsx                  # AuthContext with rate limiting
-│   ├── exportData.ts             # CSV/PDF export utilities
+│   ├── exportData.ts             # PDF export utilities (uses legacy expo-file-system)
+│   ├── notifications.ts          # Push notification utilities for goal deadlines
+│   ├── premium.tsx               # Premium context, limits, upgrade prompts
 │   ├── rateLimiter.ts            # Rate limiting utilities
 │   ├── supabase.ts               # Supabase client (env vars)
 │   ├── theme.tsx                 # ThemeProvider with background image support
@@ -608,13 +728,14 @@ getStatusColor(status: ItemStatus): string
 
 | Hook | Purpose |
 |------|---------|
-| `useCollections` | CRUD for collections with validation, reorder support |
-| `useItems` | CRUD for items with validation and stats |
+| `useCollections` | CRUD for collections with validation, reorder support, premium limits |
+| `useItems` | CRUD for items with validation, stats, premium limits |
 | `useProfile` | Profile operations (fetch, update) |
 | `useFollows` | Follow/unfollow, get followers/following |
 | `usePaintingGoals` | CRUD for painting goals, progress tracking |
 | `useProgressStats` | Calculate overall and per-game-system progress |
 | `useWishlist` | CRUD for wishlist items, mark as purchased |
+| `usePremium` | Premium status, limits checking, upgrade prompts |
 
 ---
 
@@ -653,14 +774,18 @@ getStatusColor(status: ItemStatus): string
 - [x] Alphabetical item sorting in collections
 - [x] Item notes display on collection cards
 - [x] Collection pre-selection when adding from collection
-- [x] Export data to CSV/PDF
+- [x] Export data to PDF
 - [x] Help & Feedback screen
+- [x] Premium/Freemium model (limits, paywall, upgrade prompts)
+- [x] Export as premium feature
+- [x] Push notifications for goal deadlines (premium)
+- [x] Glass card effects with blur
+- [x] Notification settings in profile (premium)
 
 ### Future Enhancements
 - [ ] Activity feed (see what followed users are painting)
 - [ ] Comments and likes on items
-- [ ] Premium subscription features
-- [ ] Push notifications for goal deadlines
+- [ ] Payment integration for premium subscriptions
 - [ ] Sharing collections publicly
 
 ---
@@ -711,17 +836,28 @@ eas build --platform android
 1. Run `npx expo start --tunnel` in the project folder
 2. Scan QR code with Expo Go on iPhone
 3. Sign up with email/password (validation enforced)
-4. Create a collection (select game, optionally add cover image)
-5. Add items with status breakdown and notes
+4. **Free tier testing**:
+   - Create up to 2 collections
+   - Add up to 5 items per collection
+   - Try to exceed limits → see upgrade prompt
+   - Tap Planning tab → see paywall
+5. **Premium testing** (set `is_premium = true` in database):
+   - Create unlimited collections and items
+   - Access Planning tab fully
+   - Export collection data to PDF
+   - Enable goal notifications in Profile > Settings
+   - Create goals with deadlines → receive notifications
 6. View dashboard - search/filter items, see status counts
 7. View collections - drag to reorder, search items
-8. View collection detail - items sorted A-Z, progress card visible, notes shown
-9. From collection, tap Add - collection auto-selected
-10. Use Planning tab - view Progress Queue, create/edit/delete goals
-11. Add wishlist items with game dropdown
-12. Tap "See All" to view full list of items needing paint
-13. Edit profile - change username, avatar
-14. Set custom background image from Profile tab
-15. Toggle dark mode - close and reopen app, preference persists
-16. Follow other users and view their profiles
-17. Access Help & Feedback from Profile tab
+8. View collection detail - items sorted A-Z, progress card visible
+9. Tap "Export Collection Data" button (premium only)
+10. From collection, tap Add - collection auto-selected
+11. Use Planning tab - view Progress Queue, create/edit/delete goals
+12. Add wishlist items with game dropdown
+13. Tap "See All" to view full list of items needing paint
+14. Edit profile - change username, avatar
+15. Set custom background image from Profile tab
+16. Toggle dark mode - close and reopen app, preference persists
+17. Follow other users and view their profiles
+18. Access Help & Feedback from Profile tab
+19. Export all collections from Profile > Export Collection Data

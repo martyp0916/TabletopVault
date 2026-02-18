@@ -1,18 +1,29 @@
 /**
  * Premium Context Provider
  *
- * Manages premium subscription status and enforces free tier limits.
- * - Free Tier: 2 collections, 10 items per collection, no Planning tab
+ * Manages premium subscription status using RevenueCat and enforces free tier limits.
+ * - Free Tier: 2 collections, 5 items per collection, no Planning tab
  * - Premium Tier: Unlimited collections and items, full Planning access
  */
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { Modal, StyleSheet, Pressable, View } from 'react-native';
+import { Modal, StyleSheet, Pressable, View, ActivityIndicator, Alert } from 'react-native';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { useAuth } from './auth';
 import { supabase } from './supabase';
 import Colors from '@/constants/Colors';
 import { useTheme } from './theme';
+import {
+  initializeRevenueCat,
+  checkPremiumStatus as checkRevenueCatStatus,
+  getOfferings,
+  purchasePackage,
+  restorePurchases,
+  identifyUser,
+  addCustomerInfoListener,
+  isRevenueCatConfigured,
+} from './revenuecat';
+import type { PurchasesPackage } from 'react-native-purchases';
 
 // Free tier limits
 export const FREE_TIER_LIMITS = {
@@ -34,6 +45,11 @@ interface PremiumContextType {
   hideUpgradePrompt: () => void;
   // Refresh premium status
   refresh: () => Promise<void>;
+  // RevenueCat purchase functions
+  packages: PurchasesPackage[];
+  purchaseLoading: boolean;
+  purchase: (pkg: PurchasesPackage) => Promise<boolean>;
+  restore: () => Promise<boolean>;
 }
 
 const PremiumContext = createContext<PremiumContextType | undefined>(undefined);
@@ -52,8 +68,13 @@ export function PremiumProvider({ children }: PremiumProviderProps) {
   const [upgradePromptVisible, setUpgradePromptVisible] = useState(false);
   const [upgradeReason, setUpgradeReason] = useState<UpgradeReason>('collections');
 
-  // Fetch premium status from profile
-  const fetchPremiumStatus = useCallback(async () => {
+  // RevenueCat state
+  const [packages, setPackages] = useState<PurchasesPackage[]>([]);
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
+  const [revenueCatReady, setRevenueCatReady] = useState(false);
+
+  // Initialize RevenueCat and fetch premium status
+  const initializeAndFetchStatus = useCallback(async () => {
     if (!user?.id) {
       setIsPremium(false);
       setLoading(false);
@@ -61,31 +82,70 @@ export function PremiumProvider({ children }: PremiumProviderProps) {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('is_premium')
-        .eq('id', user.id)
-        .single();
+      // Initialize RevenueCat with user ID
+      await initializeRevenueCat(user.id);
+      await identifyUser(user.id);
+      setRevenueCatReady(isRevenueCatConfigured());
 
-      if (error) {
-        console.error('Error fetching premium status:', error);
-        // Fail open - default to premium to avoid blocking users
-        setIsPremium(true);
+      // Check premium status from RevenueCat
+      if (isRevenueCatConfigured()) {
+        const hasPremium = await checkRevenueCatStatus();
+        setIsPremium(hasPremium);
+
+        // Sync to Supabase as backup
+        await supabase
+          .from('profiles')
+          .update({ is_premium: hasPremium })
+          .eq('id', user.id);
+
+        // Fetch available packages
+        const availablePackages = await getOfferings();
+        setPackages(availablePackages);
       } else {
-        setIsPremium(data?.is_premium ?? false);
+        // Fallback to Supabase if RevenueCat not configured
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('is_premium')
+          .eq('id', user.id)
+          .single();
+
+        if (error) {
+          console.error('Error fetching premium status:', error);
+          setIsPremium(false);
+        } else {
+          setIsPremium(data?.is_premium ?? false);
+        }
       }
     } catch (e) {
-      console.error('Error fetching premium status:', e);
-      // Fail open
-      setIsPremium(true);
+      console.error('Error initializing premium status:', e);
+      // Fail closed - default to free tier on error
+      setIsPremium(false);
     } finally {
       setLoading(false);
     }
   }, [user?.id]);
 
   useEffect(() => {
-    fetchPremiumStatus();
-  }, [fetchPremiumStatus]);
+    initializeAndFetchStatus();
+  }, [initializeAndFetchStatus]);
+
+  // Listen for RevenueCat subscription changes
+  useEffect(() => {
+    if (!user?.id || !revenueCatReady) return;
+
+    const unsubscribe = addCustomerInfoListener((info) => {
+      const hasPremium = info.entitlements.active['premium'] !== undefined;
+      setIsPremium(hasPremium);
+
+      // Sync to Supabase
+      supabase
+        .from('profiles')
+        .update({ is_premium: hasPremium })
+        .eq('id', user.id);
+    });
+
+    return unsubscribe;
+  }, [user?.id, revenueCatReady]);
 
   // Limit checking helpers
   const canCreateCollection = useCallback((currentCount: number): boolean => {
@@ -108,13 +168,86 @@ export function PremiumProvider({ children }: PremiumProviderProps) {
     setUpgradePromptVisible(false);
   }, []);
 
-  // Handle upgrade button press (placeholder for future payment integration)
-  const handleUpgrade = () => {
-    // TODO: Implement payment flow
-    // For now, just close the modal
-    hideUpgradePrompt();
-    // Could navigate to a subscription page or open in-app purchase
-  };
+  // Purchase a subscription
+  const purchase = useCallback(async (pkg: PurchasesPackage): Promise<boolean> => {
+    setPurchaseLoading(true);
+    try {
+      const result = await purchasePackage(pkg);
+
+      if (result.success) {
+        setIsPremium(true);
+        hideUpgradePrompt();
+        Alert.alert(
+          'Welcome to Premium!',
+          'Thank you for upgrading. You now have access to all features.',
+          [{ text: 'OK' }]
+        );
+        return true;
+      }
+
+      if (result.cancelled) {
+        // User cancelled, no alert needed
+        return false;
+      }
+
+      if (result.error) {
+        Alert.alert('Purchase Failed', result.error);
+      }
+      return false;
+    } catch (error) {
+      console.error('Purchase error:', error);
+      Alert.alert('Error', 'An error occurred during purchase. Please try again.');
+      return false;
+    } finally {
+      setPurchaseLoading(false);
+    }
+  }, [hideUpgradePrompt]);
+
+  // Restore purchases
+  const restore = useCallback(async (): Promise<boolean> => {
+    setPurchaseLoading(true);
+    try {
+      const result = await restorePurchases();
+
+      if (result.isPremium) {
+        setIsPremium(true);
+        hideUpgradePrompt();
+        Alert.alert(
+          'Purchases Restored',
+          'Your premium subscription has been restored.',
+          [{ text: 'OK' }]
+        );
+        return true;
+      } else {
+        Alert.alert(
+          'No Purchases Found',
+          'We couldn\'t find any previous purchases to restore.',
+          [{ text: 'OK' }]
+        );
+        return false;
+      }
+    } catch (error) {
+      console.error('Restore error:', error);
+      Alert.alert('Error', 'An error occurred while restoring purchases.');
+      return false;
+    } finally {
+      setPurchaseLoading(false);
+    }
+  }, [hideUpgradePrompt]);
+
+  // Handle upgrade button press
+  const handleUpgrade = useCallback(async () => {
+    if (packages.length > 0) {
+      // Purchase the first available package (usually monthly)
+      await purchase(packages[0]);
+    } else {
+      Alert.alert(
+        'Coming Soon',
+        'Premium subscriptions will be available soon.',
+        [{ text: 'OK', onPress: hideUpgradePrompt }]
+      );
+    }
+  }, [packages, purchase, hideUpgradePrompt]);
 
   // Get upgrade prompt content based on reason
   const getUpgradeContent = () => {
@@ -149,6 +282,13 @@ export function PremiumProvider({ children }: PremiumProviderProps) {
 
   const upgradeContent = getUpgradeContent();
 
+  // Get price display
+  const getPriceDisplay = () => {
+    if (packages.length === 0) return null;
+    const pkg = packages[0];
+    return pkg.product.priceString;
+  };
+
   return (
     <PremiumContext.Provider
       value={{
@@ -159,7 +299,11 @@ export function PremiumProvider({ children }: PremiumProviderProps) {
         canCreateItem,
         showUpgradePrompt,
         hideUpgradePrompt,
-        refresh: fetchPremiumStatus,
+        refresh: initializeAndFetchStatus,
+        packages,
+        purchaseLoading,
+        purchase,
+        restore,
       }}
     >
       {children}
@@ -226,12 +370,43 @@ export function PremiumProvider({ children }: PremiumProviderProps) {
               </View>
             </View>
 
-            {/* Buttons */}
-            <Pressable style={styles.upgradeButton} onPress={handleUpgrade}>
-              <FontAwesome name="star" size={16} color="#fff" />
-              <Text style={styles.upgradeButtonText}>Upgrade to Premium</Text>
+            {/* Price Display */}
+            {getPriceDisplay() && (
+              <View style={styles.priceContainer}>
+                <Text style={[styles.priceText, { color: colors.text }]}>
+                  {getPriceDisplay()}/month
+                </Text>
+              </View>
+            )}
+
+            {/* Upgrade Button */}
+            <Pressable
+              style={[styles.upgradeButton, purchaseLoading && styles.upgradeButtonDisabled]}
+              onPress={handleUpgrade}
+              disabled={purchaseLoading}
+            >
+              {purchaseLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <FontAwesome name="star" size={16} color="#fff" />
+                  <Text style={styles.upgradeButtonText}>Upgrade to Premium</Text>
+                </>
+              )}
             </Pressable>
 
+            {/* Restore Purchases */}
+            <Pressable
+              style={styles.restoreButton}
+              onPress={restore}
+              disabled={purchaseLoading}
+            >
+              <Text style={[styles.restoreButtonText, { color: colors.textSecondary }]}>
+                Restore Purchases
+              </Text>
+            </Pressable>
+
+            {/* Maybe Later */}
             <Pressable style={styles.laterButton} onPress={hideUpgradePrompt}>
               <Text style={[styles.laterButtonText, { color: colors.textSecondary }]}>
                 Maybe Later
@@ -293,7 +468,7 @@ const styles = StyleSheet.create({
   },
   benefitsList: {
     width: '100%',
-    marginBottom: 24,
+    marginBottom: 20,
     gap: 12,
   },
   benefitItem: {
@@ -303,6 +478,17 @@ const styles = StyleSheet.create({
   },
   benefitText: {
     fontSize: 15,
+  },
+  priceContainer: {
+    marginBottom: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: 'rgba(153, 27, 27, 0.1)',
+    borderRadius: 8,
+  },
+  priceText: {
+    fontSize: 18,
+    fontWeight: '700',
   },
   upgradeButton: {
     width: '100%',
@@ -314,13 +500,24 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 8,
   },
+  upgradeButtonDisabled: {
+    opacity: 0.7,
+  },
   upgradeButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
   },
-  laterButton: {
+  restoreButton: {
     marginTop: 12,
+    padding: 8,
+  },
+  restoreButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  laterButton: {
+    marginTop: 4,
     padding: 12,
   },
   laterButtonText: {

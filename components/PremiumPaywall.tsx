@@ -4,27 +4,34 @@
  * Full-screen component shown in place of premium-only features for free users.
  * Used for the Planning tab paywall.
  */
-import { StyleSheet, Pressable, View, ScrollView } from 'react-native';
+import { StyleSheet, Pressable, View, ScrollView, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
 import { useTheme } from '@/lib/theme';
-import { FREE_TIER_LIMITS } from '@/lib/premium';
+import { FREE_TIER_LIMITS, usePremium } from '@/lib/premium';
 
-interface PremiumPaywallProps {
-  onUpgrade?: () => void;
-}
-
-export function PremiumPaywall({ onUpgrade }: PremiumPaywallProps) {
+export function PremiumPaywall() {
   const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
+  const { packages, purchase, restore, purchaseLoading } = usePremium();
   const hasBackground = !!backgroundImageUrl;
   const colors = isDarkMode ? Colors.dark : Colors.light;
 
-  const handleUpgrade = () => {
-    // TODO: Implement payment flow
-    if (onUpgrade) {
-      onUpgrade();
+  const handleUpgrade = async () => {
+    if (packages.length > 0) {
+      await purchase(packages[0]);
     }
+  };
+
+  const handleRestore = async () => {
+    await restore();
+  };
+
+  // Get price display
+  const getPriceDisplay = () => {
+    if (packages.length === 0) return null;
+    const pkg = packages[0];
+    return pkg.product.priceString;
   };
 
   return (
@@ -163,10 +170,40 @@ export function PremiumPaywall({ onUpgrade }: PremiumPaywallProps) {
           </View>
         </View>
 
+        {/* Price Display */}
+        {getPriceDisplay() && (
+          <View style={styles.priceContainer}>
+            <Text style={[styles.priceText, { color: colors.text }]}>
+              {getPriceDisplay()}/month
+            </Text>
+          </View>
+        )}
+
         {/* Upgrade Button */}
-        <Pressable style={styles.upgradeButton} onPress={handleUpgrade}>
-          <FontAwesome name="star" size={18} color="#fff" />
-          <Text style={styles.upgradeButtonText}>Upgrade to Premium</Text>
+        <Pressable
+          style={[styles.upgradeButton, purchaseLoading && styles.upgradeButtonDisabled]}
+          onPress={handleUpgrade}
+          disabled={purchaseLoading}
+        >
+          {purchaseLoading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <>
+              <FontAwesome name="star" size={18} color="#fff" />
+              <Text style={styles.upgradeButtonText}>Upgrade to Premium</Text>
+            </>
+          )}
+        </Pressable>
+
+        {/* Restore Purchases */}
+        <Pressable
+          style={styles.restoreButton}
+          onPress={handleRestore}
+          disabled={purchaseLoading}
+        >
+          <Text style={[styles.restoreButtonText, { color: colors.textSecondary }]}>
+            Restore Purchases
+          </Text>
         </Pressable>
 
         {/* Bottom spacing */}
@@ -280,7 +317,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   limitsTitle: {
     fontSize: 11,
@@ -299,6 +336,17 @@ const styles = StyleSheet.create({
   limitsDivider: {
     fontSize: 14,
   },
+  priceContainer: {
+    marginBottom: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(153, 27, 27, 0.1)',
+    borderRadius: 10,
+  },
+  priceText: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
   upgradeButton: {
     width: '100%',
     flexDirection: 'row',
@@ -309,9 +357,20 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     gap: 10,
   },
+  upgradeButtonDisabled: {
+    opacity: 0.7,
+  },
   upgradeButtonText: {
     color: '#fff',
     fontSize: 17,
     fontWeight: '700',
+  },
+  restoreButton: {
+    marginTop: 16,
+    padding: 12,
+  },
+  restoreButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

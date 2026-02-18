@@ -21,6 +21,7 @@ import {
   getRateLimitKey,
   isRateLimitError,
 } from './rateLimiter';
+import { identifyUser, logOutRevenueCatUser } from './revenuecat';
 
 interface AuthContextType {
   user: User | null;
@@ -151,6 +152,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Clear rate limit on successful login
     if (!error) {
       rateLimiter.clear(rateLimitKey);
+
+      // Identify user with RevenueCat for subscription tracking
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser?.id) {
+        await identifyUser(currentUser.id);
+      }
     }
 
     return { error };
@@ -162,6 +169,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     // Clear all rate limits on logout
     rateLimiter.clearAll();
+
+    // Log out from RevenueCat
+    await logOutRevenueCatUser();
+
     await supabase.auth.signOut();
   };
 
