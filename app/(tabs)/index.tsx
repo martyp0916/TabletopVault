@@ -98,10 +98,18 @@ export default function HomeScreen() {
       {/* Welcome Header */}
       <View style={styles.header}>
         <View style={[styles.headerLeft, hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }]}>
-          <Text style={[styles.appName, { color: colors.text }]}>TabletopVault</Text>
-          <Text style={[styles.greeting, { color: colors.textSecondary }]}>
-            Welcome back{profile?.username ? `, ${profile.username}` : ''}
-          </Text>
+          <View style={styles.titleRow}>
+            {/* Placeholder logo - replace with actual logo image later */}
+            <View style={[styles.logoPlaceholder, { backgroundColor: colors.primary }]}>
+              <FontAwesome name="shield" size={32} color="#fff" />
+            </View>
+            <View style={styles.titleTextContainer}>
+              <Text style={[styles.appName, { color: colors.text }]}>Tabletop Organizer</Text>
+              <Text style={[styles.greeting, { color: colors.textSecondary }]}>
+                Welcome back{profile?.username ? `, ${profile.username}` : ''}
+              </Text>
+            </View>
+          </View>
         </View>
         <Pressable
           style={[styles.themeToggle, { backgroundColor: colors.card }]}
@@ -459,9 +467,27 @@ const styles = StyleSheet.create({
   headerLeft: {
     backgroundColor: 'transparent',
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'transparent',
+  },
+  logoPlaceholder: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  titleTextContainer: {
+    backgroundColor: 'transparent',
+  },
   appName: {
-    fontSize: 28,
-    fontWeight: '800',
+    fontSize: 26,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
   },
   greeting: {
     fontSize: 15,

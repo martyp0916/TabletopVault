@@ -27,11 +27,9 @@ export function PremiumPaywall() {
     await restore();
   };
 
-  // Get price display
+  // Get price display - hardcoded to match App Store pricing
   const getPriceDisplay = () => {
-    if (packages.length === 0) return null;
-    const pkg = packages[0];
-    return pkg.product.priceString;
+    return '$2.99';
   };
 
   return (

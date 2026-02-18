@@ -5,13 +5,29 @@
 **App Name**: TabletopVault
 **Purpose**: Mobile app for tabletop gaming collectors to track inventory, share collections, plan painting projects, and connect with other hobbyists
 **Target Games**: Warhammer 40K, Warhammer Age of Sigmar, Horus Heresy, Kill Team, Star Wars Legion, Star Wars Shatterpoint, Halo Flashpoint, Bolt Action, Marvel Crisis Protocol, Battle Tech, and more
-**Tech Stack**: React Native + Expo + TypeScript + Supabase
+**Tech Stack**: React Native + Expo + TypeScript + Supabase + RevenueCat
 **Repository**: https://github.com/martyp0916/TabletopVault
-**Last Updated**: February 4, 2025
+**Last Updated**: February 18, 2025
 
 ---
 
-## Recent Changes (February 4, 2025)
+## Recent Changes (February 18, 2025)
+
+- **RevenueCat Subscription Integration**:
+  - Created `lib/revenuecat.ts` SDK wrapper with purchase/restore functions
+  - Updated `lib/premium.tsx` to use RevenueCat for premium status
+  - Real pricing display from RevenueCat offerings
+  - Purchase flow with StoreKit integration
+  - Restore purchases functionality
+  - User identification on login/logout
+  - Automatic sync of subscription status to Supabase
+  - Updated `components/PremiumPaywall.tsx` with purchase UI
+  - Added `expo-build-properties` plugin (iOS 15.1 deployment target)
+  - Installed `react-native-purchases` SDK
+
+---
+
+## Previous Changes (February 4, 2025)
 
 - **Premium/Freemium Model**:
   - Free tier: 2 collections, 5 items per collection
@@ -62,9 +78,9 @@
 
 ---
 
-## Current Status: Freemium App with Premium Features
+## Current Status: Freemium App with RevenueCat Subscriptions
 
-The app is a fully-featured tabletop collection manager with a freemium business model. Free users can manage up to 2 collections with 5 items each. Premium users get unlimited collections/items, access to the Planning tab, export functionality, and goal deadline notifications.
+The app is a fully-featured tabletop collection manager with a freemium business model powered by RevenueCat. Free users can manage up to 2 collections with 5 items each. Premium users get unlimited collections/items, access to the Planning tab, export functionality, and goal deadline notifications.
 
 ### What's Working
 
@@ -76,8 +92,11 @@ The app is a fully-featured tabletop collection manager with a freemium business
 | User logout | Working | Clears session and redirects to login |
 | Forgot password | Working | Email-based password reset flow |
 | Reset password | Working | Deep link handling for password reset |
-| **Premium Features** | | |
-| Premium context | Working | Tracks premium status, enforces limits |
+| **Premium/Subscriptions** | | |
+| Premium context | Working | Tracks premium status via RevenueCat |
+| RevenueCat integration | Working | SDK wrapper in `lib/revenuecat.ts` |
+| Purchase flow | Working | Real pricing from App Store |
+| Restore purchases | Working | Restores previous subscriptions |
 | Upgrade prompts | Working | Modal with benefits list when limits hit |
 | Planning paywall | Working | Free users see paywall instead of Planning tab |
 | Export data | Working | PDF export (premium only) |
@@ -149,6 +168,61 @@ The app is a fully-featured tabletop collection manager with a freemium business
 
 ---
 
+## RevenueCat Subscription Integration
+
+### Overview
+The app uses RevenueCat for managing premium subscriptions via Apple's StoreKit.
+
+### Configuration
+- **SDK**: `react-native-purchases`
+- **API Key**: Stored in `.env` and `eas.json` as `EXPO_PUBLIC_REVENUECAT_IOS_KEY`
+- **Entitlement ID**: `premium`
+- **Product ID**: `tabletopvault_premium_monthly`
+
+### Files
+- **`lib/revenuecat.ts`** - SDK wrapper with all RevenueCat functions
+- **`lib/premium.tsx`** - Premium context using RevenueCat for status
+- **`lib/auth.tsx`** - User identification on login/logout
+- **`components/PremiumPaywall.tsx`** - Full-screen paywall with purchase UI
+
+### Key Functions (`lib/revenuecat.ts`)
+```typescript
+initializeRevenueCat(userId)    // Initialize SDK with user
+checkPremiumStatus()            // Check if user has premium entitlement
+getOfferings()                  // Get available subscription packages
+purchasePackage(pkg)            // Purchase a subscription
+restorePurchases()              // Restore previous purchases
+identifyUser(userId)            // Associate user with RevenueCat
+logOutRevenueCatUser()          // Log out from RevenueCat
+addCustomerInfoListener(cb)     // Listen for subscription changes
+```
+
+### Premium Context (`lib/premium.tsx`)
+```typescript
+interface PremiumContextType {
+  isPremium: boolean;
+  loading: boolean;
+  packages: PurchasesPackage[];      // Available subscription packages
+  purchaseLoading: boolean;          // Loading state during purchase
+  purchase: (pkg) => Promise<bool>;  // Purchase a package
+  restore: () => Promise<bool>;      // Restore purchases
+  // ... existing limit checking functions
+}
+```
+
+### Setup Required in RevenueCat Dashboard
+1. Connect App Store Connect (shared secret + .p8 key)
+2. Create product: `tabletopvault_premium_monthly`
+3. Create entitlement: `premium`
+4. Create offering: `default` with Monthly package
+
+### Setup Required in App Store Connect
+1. Create Subscription Group: "Premium"
+2. Create subscription product with Product ID: `tabletopvault_premium_monthly`
+3. Set price (e.g., $4.99/month)
+
+---
+
 ## Premium Features
 
 ### Free Tier Limits (`lib/premium.tsx`)
@@ -167,10 +241,13 @@ const FREE_TIER_LIMITS = {
 - Goal deadline push notifications
 
 ### Premium Context
-- `isPremium`: Boolean indicating premium status
+- `isPremium`: Boolean indicating premium status (from RevenueCat)
 - `canCreateCollection(count)`: Check if user can create more collections
 - `canCreateItem(count)`: Check if user can add more items to collection
 - `showUpgradePrompt(reason)`: Show upgrade modal with reason
+- `packages`: Available subscription packages from RevenueCat
+- `purchase(pkg)`: Purchase a subscription package
+- `restore()`: Restore previous purchases
 
 ### Upgrade Reasons
 - `'collections'`: Hit collection limit
@@ -499,6 +576,7 @@ The app implements comprehensive security measures following OWASP best practice
 ### Environment Variables (lib/supabase.ts)
 - **API keys moved to environment variables** - No hardcoded secrets in source code
 - Uses `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- Uses `EXPO_PUBLIC_REVENUECAT_IOS_KEY` for RevenueCat
 - `.env` file added to `.gitignore` to prevent accidental commits
 - `.env.example` provided as template
 
@@ -615,7 +693,7 @@ TabletopVault/
 │   ├── FollowButton.tsx          # Follow/unfollow button component
 │   ├── UserAvatar.tsx            # User avatar display component
 │   ├── GlassCard.tsx             # Glass effect card with blur
-│   ├── PremiumPaywall.tsx        # Paywall for Planning tab (free users)
+│   ├── PremiumPaywall.tsx        # Paywall for Planning tab with purchase UI
 │   └── useColorScheme.ts         # System color scheme hook
 ├── constants/
 │   └── Colors.ts                 # Crimson theme colors (Battle Ready Edition)
@@ -629,11 +707,12 @@ TabletopVault/
 │   ├── useProgressStats.ts       # Progress calculations by game system
 │   └── useWishlist.ts            # Wishlist CRUD, mark as purchased
 ├── lib/
-│   ├── auth.tsx                  # AuthContext with rate limiting
+│   ├── auth.tsx                  # AuthContext with rate limiting + RevenueCat user ID
 │   ├── exportData.ts             # PDF export utilities (uses legacy expo-file-system)
 │   ├── notifications.ts          # Push notification utilities for goal deadlines
-│   ├── premium.tsx               # Premium context, limits, upgrade prompts
+│   ├── premium.tsx               # Premium context with RevenueCat integration
 │   ├── rateLimiter.ts            # Rate limiting utilities
+│   ├── revenuecat.ts             # RevenueCat SDK wrapper (NEW)
 │   ├── supabase.ts               # Supabase client (env vars)
 │   ├── theme.tsx                 # ThemeProvider with background image support
 │   └── validation.ts             # Input validation schemas
@@ -651,8 +730,8 @@ TabletopVault/
 │   └── database.ts               # TypeScript interfaces + helpers
 ├── .env                          # Environment variables (git ignored)
 ├── .env.example                  # Template for env vars
-├── app.json                      # Expo configuration with deep links
-├── eas.json                      # EAS Build configuration
+├── app.json                      # Expo configuration with deep links + build properties
+├── eas.json                      # EAS Build configuration with env vars
 ├── package.json                  # Dependencies
 └── tsconfig.json                 # TypeScript config
 ```
@@ -735,7 +814,7 @@ getStatusColor(status: ItemStatus): string
 | `usePaintingGoals` | CRUD for painting goals, progress tracking |
 | `useProgressStats` | Calculate overall and per-game-system progress |
 | `useWishlist` | CRUD for wishlist items, mark as purchased |
-| `usePremium` | Premium status, limits checking, upgrade prompts |
+| `usePremium` | Premium status via RevenueCat, limits checking, purchase/restore |
 
 ---
 
@@ -781,12 +860,13 @@ getStatusColor(status: ItemStatus): string
 - [x] Push notifications for goal deadlines (premium)
 - [x] Glass card effects with blur
 - [x] Notification settings in profile (premium)
+- [x] **RevenueCat subscription integration**
 
 ### Future Enhancements
 - [ ] Activity feed (see what followed users are painting)
 - [ ] Comments and likes on items
-- [ ] Payment integration for premium subscriptions
 - [ ] Sharing collections publicly
+- [ ] Android support for RevenueCat
 
 ---
 
@@ -804,6 +884,12 @@ npm install
 
 # Run TypeScript check
 npx tsc --noEmit
+
+# Build for TestFlight/App Store
+eas build --platform ios --profile production
+
+# Submit to App Store/TestFlight
+eas submit --platform ios
 
 # Run database migration
 node -e "
@@ -823,10 +909,6 @@ client.connect().then(() => client.query(sql)).then(() => {
   client.end();
 });
 "
-
-# Build for production
-eas build --platform ios
-eas build --platform android
 ```
 
 ---
@@ -841,23 +923,34 @@ eas build --platform android
    - Add up to 5 items per collection
    - Try to exceed limits → see upgrade prompt
    - Tap Planning tab → see paywall
-5. **Premium testing** (set `is_premium = true` in database):
+5. **Premium testing via RevenueCat**:
+   - Tap "Upgrade to Premium" → see real pricing
+   - Complete purchase flow (sandbox testing)
+   - All premium features unlock after purchase
+   - Restore purchases works for returning users
+6. **Premium testing via database** (set `is_premium = true` in Supabase):
    - Create unlimited collections and items
    - Access Planning tab fully
    - Export collection data to PDF
    - Enable goal notifications in Profile > Settings
    - Create goals with deadlines → receive notifications
-6. View dashboard - search/filter items, see status counts
-7. View collections - drag to reorder, search items
-8. View collection detail - items sorted A-Z, progress card visible
-9. Tap "Export Collection Data" button (premium only)
-10. From collection, tap Add - collection auto-selected
-11. Use Planning tab - view Progress Queue, create/edit/delete goals
-12. Add wishlist items with game dropdown
-13. Tap "See All" to view full list of items needing paint
-14. Edit profile - change username, avatar
-15. Set custom background image from Profile tab
-16. Toggle dark mode - close and reopen app, preference persists
-17. Follow other users and view their profiles
-18. Access Help & Feedback from Profile tab
-19. Export all collections from Profile > Export Collection Data
+7. View dashboard - search/filter items, see status counts
+8. View collections - drag to reorder, search items
+9. View collection detail - items sorted A-Z, progress card visible
+10. Tap "Export Collection Data" button (premium only)
+11. From collection, tap Add - collection auto-selected
+12. Use Planning tab - view Progress Queue, create/edit/delete goals
+13. Add wishlist items with game dropdown
+14. Tap "See All" to view full list of items needing paint
+15. Edit profile - change username, avatar
+16. Set custom background image from Profile tab
+17. Toggle dark mode - close and reopen app, preference persists
+18. Follow other users and view their profiles
+19. Access Help & Feedback from Profile tab
+20. Export all collections from Profile > Export Collection Data
+
+### Testing Subscriptions
+- **Requires**: Physical iOS device + development build (not Expo Go)
+- **Sandbox testing**: Use App Store Connect sandbox test account
+- Build with: `eas build --platform ios --profile production`
+- Or for local testing: `npx expo run:ios --device` (requires CocoaPods)
