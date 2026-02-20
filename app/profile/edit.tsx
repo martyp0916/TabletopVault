@@ -1,4 +1,5 @@
 import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform, Switch } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -11,6 +12,7 @@ import { supabase } from '@/lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
 
 export default function EditProfileScreen() {
+  const insets = useSafeAreaInsets();
   const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
   const hasBackground = !!backgroundImageUrl;
@@ -193,7 +195,7 @@ export default function EditProfileScreen() {
   return (
     <View style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: hasBackground ? 'transparent' : colors.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 10, borderBottomColor: colors.border, backgroundColor: hasBackground ? 'transparent' : colors.background }]}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <FontAwesome name="arrow-left" size={20} color={colors.text} />
         </Pressable>
@@ -349,7 +351,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 60,
     paddingBottom: 16,
     borderBottomWidth: 1,
   },

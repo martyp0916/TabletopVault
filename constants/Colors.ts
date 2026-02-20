@@ -1,4 +1,4 @@
-// TabletopVault Color Theme - Battle Ready Edition
+// Tabletop Organizer Color Theme - Battle Ready Edition
 // Deep crimson accents with dark backgrounds - bold, dramatic, game-ready
 
 const crimson = '#991b1b';         // Primary crimson accent

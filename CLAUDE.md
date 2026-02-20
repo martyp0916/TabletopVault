@@ -1,8 +1,8 @@
-# TabletopVault - Project Status
+# Tabletop Organizer - Project Status
 
 ## Overview
 
-**App Name**: TabletopVault
+**App Name**: Tabletop Organizer (formerly TabletopVault)
 **Purpose**: Mobile app for tabletop gaming collectors to track inventory, share collections, plan painting projects, and connect with other hobbyists
 **Target Games**: Warhammer 40K, Warhammer Age of Sigmar, Horus Heresy, Kill Team, Star Wars Legion, Star Wars Shatterpoint, Halo Flashpoint, Bolt Action, Marvel Crisis Protocol, Battle Tech, and more
 **Tech Stack**: React Native + Expo + TypeScript + Supabase + RevenueCat
@@ -13,10 +13,20 @@
 
 ## Recent Changes (February 18, 2025)
 
+- **App Branding Update**:
+  - Renamed app title from "TabletopVault" to "Tabletop Organizer"
+  - Added placeholder logo icon (shield) next to app title on home screen
+  - Restructured header layout with logo spanning title and greeting text
+  - Logo placeholder ready to be replaced with actual app logo image
+
+- **Premium Pricing Display**:
+  - Hardcoded premium price display to $2.99/month
+  - Price shown in both PremiumPaywall and upgrade modal
+  - Note: Actual charged price comes from App Store Connect
+
 - **RevenueCat Subscription Integration**:
   - Created `lib/revenuecat.ts` SDK wrapper with purchase/restore functions
   - Updated `lib/premium.tsx` to use RevenueCat for premium status
-  - Real pricing display from RevenueCat offerings
   - Purchase flow with StoreKit integration
   - Restore purchases functionality
   - User identification on login/logout
@@ -80,7 +90,29 @@
 
 ## Current Status: Freemium App with RevenueCat Subscriptions
 
-The app is a fully-featured tabletop collection manager with a freemium business model powered by RevenueCat. Free users can manage up to 2 collections with 5 items each. Premium users get unlimited collections/items, access to the Planning tab, export functionality, and goal deadline notifications.
+Tabletop Organizer is a fully-featured tabletop collection manager with a freemium business model powered by RevenueCat. Free users can manage up to 2 collections with 5 items each. Premium users get unlimited collections/items, access to the Planning tab, export functionality, and goal deadline notifications.
+
+### Home Screen Header
+The home screen displays:
+- **Logo placeholder**: Shield icon in crimson rounded square (52x52px)
+- **App title**: "Tabletop Organizer" with letter spacing
+- **Greeting**: "Welcome back, [username]" aligned with title
+- Both text elements align to the right of the logo
+
+To replace the placeholder with an actual logo:
+```typescript
+// In app/(tabs)/index.tsx, replace:
+<View style={[styles.logoPlaceholder, { backgroundColor: colors.primary }]}>
+  <FontAwesome name="shield" size={32} color="#fff" />
+</View>
+
+// With:
+<Image
+  source={require('@/assets/images/logo.png')}
+  style={styles.logoPlaceholder}
+  resizeMode="contain"
+/>
+```
 
 ### What's Working
 
@@ -219,7 +251,14 @@ interface PremiumContextType {
 ### Setup Required in App Store Connect
 1. Create Subscription Group: "Premium"
 2. Create subscription product with Product ID: `tabletopvault_premium_monthly`
-3. Set price (e.g., $4.99/month)
+3. Set price to **$2.99/month** (matches hardcoded display price)
+
+### Price Display
+The app hardcodes the displayed price to $2.99/month in:
+- `components/PremiumPaywall.tsx` - Planning tab paywall
+- `lib/premium.tsx` - Upgrade modal
+
+This ensures consistent pricing display regardless of RevenueCat loading state. The actual charged price comes from App Store Connect.
 
 ---
 
@@ -861,6 +900,9 @@ getStatusColor(status: ItemStatus): string
 - [x] Glass card effects with blur
 - [x] Notification settings in profile (premium)
 - [x] **RevenueCat subscription integration**
+- [x] **App rebranding to "Tabletop Organizer"**
+- [x] **Placeholder logo icon on home screen**
+- [x] **Premium price display ($2.99/month)**
 
 ### Future Enhancements
 - [ ] Activity feed (see what followed users are painting)

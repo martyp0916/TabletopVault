@@ -383,7 +383,7 @@ function getStatusColor(status: string): string {
  */
 export async function exportToCSV(
   collections: ExportCollection[],
-  filename: string = 'tabletopvault-export'
+  filename: string = 'tabletop-organizer-export'
 ): Promise<void> {
   const csv = generateCSV(collections);
   const fileUri = `${FileSystem.documentDirectory}${filename}.csv`;
@@ -406,8 +406,8 @@ export async function exportToCSV(
  */
 export async function exportToPDF(
   collections: ExportCollection[],
-  title: string = 'TabletopVault Collection',
-  filename: string = 'tabletopvault-export'
+  title: string = 'Tabletop Organizer Collection',
+  filename: string = 'tabletop-organizer-export'
 ): Promise<void> {
   const html = generatePDFHTML(collections, title);
 

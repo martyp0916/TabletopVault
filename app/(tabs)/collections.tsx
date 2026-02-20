@@ -1,4 +1,5 @@
 import { StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator, TextInput, Modal, RefreshControl, Image, ActionSheetIOS, Platform, Alert, View, KeyboardAvoidingView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -51,6 +52,7 @@ const COLLECTION_COLORS = [
 ];
 
 export default function CollectionsScreen() {
+  const insets = useSafeAreaInsets();
   const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
   const hasBackground = !!backgroundImageUrl;
   const [showModal, setShowModal] = useState(false);
@@ -480,7 +482,7 @@ export default function CollectionsScreen() {
   return (
     <GestureHandlerRootView style={[styles.container, { backgroundColor: hasBackground ? 'transparent' : colors.background }]}>
       {/* Fixed Header with Search */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View style={styles.headerTop}>
           <View style={[styles.headerTitleArea, hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }]}>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Organize Your</Text>
@@ -821,7 +823,6 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 24,
-    paddingTop: 60,
     backgroundColor: 'transparent',
   },
   headerTop: {

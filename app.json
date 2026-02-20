@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "TabletopVault",
+    "name": "Tabletop Organizer",
     "slug": "TabletopVault",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,15 +11,15 @@
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#111827"
+      "backgroundColor": "#991b1b"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tabletopvault.app",
       "buildNumber": "1",
       "infoPlist": {
-        "NSCameraUsageDescription": "TabletopVault needs camera access to take photos of your miniatures.",
-        "NSPhotoLibraryUsageDescription": "TabletopVault needs photo library access to select images for your collection.",
+        "NSCameraUsageDescription": "Tabletop Organizer needs camera access to take photos of your miniatures.",
+        "NSPhotoLibraryUsageDescription": "Tabletop Organizer needs photo library access to select images for your collection.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -44,8 +44,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "TabletopVault needs photo library access to select images for your collection.",
-          "cameraPermission": "TabletopVault needs camera access to take photos of your miniatures."
+          "photosPermission": "Tabletop Organizer needs photo library access to select images for your collection.",
+          "cameraPermission": "Tabletop Organizer needs camera access to take photos of your miniatures."
         }
       ],
       "@react-native-community/datetimepicker",

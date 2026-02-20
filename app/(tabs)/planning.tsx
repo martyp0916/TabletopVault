@@ -1,4 +1,5 @@
 import { StyleSheet, ScrollView, Pressable, RefreshControl, Modal, TextInput, Alert, View, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -42,6 +43,7 @@ const GAME_LIST = [
 ];
 
 export default function PlanningScreen() {
+  const insets = useSafeAreaInsets();
   const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
   const hasBackground = !!backgroundImageUrl;
   const colors = isDarkMode ? Colors.dark : Colors.light;
@@ -354,7 +356,7 @@ export default function PlanningScreen() {
         }
       >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View style={[styles.headerLeft, hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }]}>
           <Text style={[styles.title, { color: colors.text }]}>Planning</Text>
         </View>
@@ -1125,7 +1127,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 60,
     paddingBottom: 16,
     backgroundColor: 'transparent',
   },

@@ -1,4 +1,5 @@
 import { StyleSheet, ScrollView, Pressable, ActivityIndicator, Alert, RefreshControl, Image, View, ActionSheetIOS, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -17,6 +18,7 @@ import { exportToPDF, ExportCollection } from '@/lib/exportData';
 type ItemPhotoMap = Record<string, string>;
 
 export default function CollectionDetailScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams();
   const { isDarkMode, toggleTheme } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
@@ -272,7 +274,7 @@ export default function CollectionDetailScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 10, borderBottomColor: colors.border, backgroundColor: colors.background }]}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <FontAwesome name="arrow-left" size={20} color={colors.text} />
         </Pressable>

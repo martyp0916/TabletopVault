@@ -1,4 +1,5 @@
 import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform, KeyboardAvoidingView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -37,6 +38,7 @@ function getGameSystemFromName(name: string): GameSystem {
 }
 
 export default function AddScreen() {
+  const insets = useSafeAreaInsets();
   const { collectionId } = useLocalSearchParams<{ collectionId?: string }>();
   const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
@@ -279,7 +281,7 @@ export default function AddScreen() {
         keyboardShouldPersistTaps="handled"
       >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View style={styles.headerTop}>
           <View style={[styles.headerTitleArea, hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }]}>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Add New</Text>
@@ -575,7 +577,6 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 24,
-    paddingTop: 60,
     backgroundColor: 'transparent',
   },
   headerTop: {

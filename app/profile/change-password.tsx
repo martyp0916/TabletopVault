@@ -1,4 +1,5 @@
 import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -9,6 +10,7 @@ import { useTheme } from '@/lib/theme';
 import { supabase } from '@/lib/supabase';
 
 export default function ChangePasswordScreen() {
+  const insets = useSafeAreaInsets();
   const { isDarkMode } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
   const { user } = useAuth();
@@ -87,7 +89,7 @@ export default function ChangePasswordScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 10, borderBottomColor: colors.border }]}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <FontAwesome name="arrow-left" size={20} color={colors.text} />
         </Pressable>
@@ -214,7 +216,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 60,
     paddingBottom: 16,
     borderBottomWidth: 1,
   },

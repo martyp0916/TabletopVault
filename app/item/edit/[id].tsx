@@ -1,4 +1,5 @@
 import { StyleSheet, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Image, ActionSheetIOS, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text, View } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import Colors from '@/constants/Colors';
@@ -20,6 +21,7 @@ interface ItemImage {
 }
 
 export default function EditItemScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams();
   const { isDarkMode, toggleTheme } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
@@ -398,7 +400,7 @@ export default function EditItemScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border, backgroundColor: colors.background }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 10, borderBottomColor: colors.border, backgroundColor: colors.background }]}>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <FontAwesome name="arrow-left" size={20} color={colors.text} />
         </Pressable>
@@ -626,7 +628,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 60,
     paddingBottom: 16,
     borderBottomWidth: 1,
   },

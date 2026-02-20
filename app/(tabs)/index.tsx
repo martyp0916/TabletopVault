@@ -1,4 +1,5 @@
-import { StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput, View, Platform } from 'react-native';
+import { StyleSheet, ScrollView, Pressable, ActivityIndicator, RefreshControl, TextInput, View, Platform, Image } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -15,6 +16,7 @@ import { GAME_COLORS, STATUS_LABELS, GameSystem, ItemStatus, getEffectiveStatus 
 type FilterStatus = 'all' | 'nib' | 'assembled' | 'primed' | 'painted';
 
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
   const { isDarkMode, toggleTheme, backgroundImageUrl } = useTheme();
   const colors = isDarkMode ? Colors.dark : Colors.light;
   const hasBackground = !!backgroundImageUrl;
@@ -96,13 +98,15 @@ export default function HomeScreen() {
       }
     >
       {/* Welcome Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View style={[styles.headerLeft, hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12 }]}>
           <View style={styles.titleRow}>
-            {/* Placeholder logo - replace with actual logo image later */}
-            <View style={[styles.logoPlaceholder, { backgroundColor: colors.primary }]}>
-              <FontAwesome name="shield" size={32} color="#fff" />
-            </View>
+            {/* App logo */}
+            <Image
+              source={require('@/assets/images/icon.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
             <View style={styles.titleTextContainer}>
               <Text style={[styles.appName, { color: colors.text }]}>Tabletop Organizer</Text>
               <Text style={[styles.greeting, { color: colors.textSecondary }]}>
@@ -460,7 +464,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 60,
     paddingBottom: 8,
     backgroundColor: 'transparent',
   },
@@ -473,12 +476,10 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: 'transparent',
   },
-  logoPlaceholder: {
+  logoImage: {
     width: 52,
     height: 52,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 10,
   },
   titleTextContainer: {
     backgroundColor: 'transparent',

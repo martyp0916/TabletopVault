@@ -1,4 +1,5 @@
 import { StyleSheet, ScrollView, Pressable, Switch, ActivityIndicator, Alert, Image, View, ActionSheetIOS, Platform, ImageBackground, Linking } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { Text } from '@/components/Themed';
 import { FontAwesome } from '@expo/vector-icons';
@@ -21,6 +22,7 @@ import {
 } from '@/lib/notifications';
 
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const { isDarkMode, themeMode, setThemeMode, backgroundImageUrl, setBackgroundImagePath, refreshBackgroundImage } = useTheme();
   const hasBackground = !!backgroundImageUrl;
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -479,7 +481,7 @@ export default function ProfileScreen() {
         items: (allItems || []).filter((item) => item.collection_id === collection.id),
       }));
 
-      await exportToPDF(exportCollections, 'TabletopVault Collections', 'TabletopVault-All-Collections');
+      await exportToPDF(exportCollections, 'Tabletop Organizer Collections', 'Tabletop-Organizer-All-Collections');
     } catch (error) {
       console.error('Export error:', error);
       Alert.alert('Export Failed', 'There was an error exporting your data. Please try again.');
@@ -615,7 +617,7 @@ export default function ProfileScreen() {
       showsVerticalScrollIndicator={false}
     >
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <View style={[hasBackground && { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, alignSelf: 'flex-start' }]}>
           <Text style={[styles.title, { color: colors.text }]}>Profile</Text>
         </View>
@@ -900,10 +902,10 @@ export default function ProfileScreen() {
           onPress={() => router.push('/profile/help-feedback')}
         >
           <View style={styles.settingLeft}>
-            <View style={[styles.settingIcon, { backgroundColor: '#6b7280' }]}>
-              <FontAwesome name="question-circle" size={16} color="#fff" />
+            <View style={[styles.settingIcon, { backgroundColor: '#991b1b' }]}>
+              <FontAwesome name="envelope" size={16} color="#fff" />
             </View>
-            <Text style={[styles.settingText, { color: colors.text }]}>Help & Feedback</Text>
+            <Text style={[styles.settingText, { color: colors.text }]}>Contact Us</Text>
           </View>
           <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
         </Pressable>
@@ -928,7 +930,7 @@ export default function ProfileScreen() {
       {/* App Version */}
       <View style={[styles.versionContainer, hasBackground && { backgroundColor: colors.card }]}>
         <Text style={[styles.version, { color: colors.textSecondary }]}>
-          TabletopVault v1.0.0
+          Tabletop Organizer v1.0.0
         </Text>
       </View>
 
@@ -944,7 +946,6 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 24,
-    paddingTop: 60,
     backgroundColor: 'transparent',
   },
   title: {
