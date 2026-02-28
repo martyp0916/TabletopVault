@@ -2,6 +2,8 @@
  * RevenueCat Integration
  *
  * Handles subscription purchases and entitlement checking for premium features.
+ * Note: RevenueCat requires native modules and does NOT work in Expo Go.
+ * Use a development build (npx expo run:ios) for testing subscriptions.
  */
 import Purchases, {
   PurchasesPackage,
@@ -10,6 +12,7 @@ import Purchases, {
   PurchasesOfferings,
 } from 'react-native-purchases';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 const REVENUECAT_IOS_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY || '';
 const ENTITLEMENT_ID = 'premium';
@@ -17,11 +20,24 @@ const ENTITLEMENT_ID = 'premium';
 let isConfigured = false;
 
 /**
+ * Check if running in Expo Go (where native modules aren't available)
+ */
+function isExpoGo(): boolean {
+  return Constants.appOwnership === 'expo';
+}
+
+/**
  * Initialize RevenueCat SDK
  * Call this once at app startup after user authentication
  */
 export async function initializeRevenueCat(userId?: string): Promise<void> {
   if (isConfigured) return;
+
+  // Skip RevenueCat in Expo Go - native modules aren't available
+  if (isExpoGo()) {
+    console.log('RevenueCat: Skipping in Expo Go (use development build for subscriptions)');
+    return;
+  }
 
   // Only configure on iOS for now
   if (Platform.OS === 'ios') {
@@ -52,6 +68,8 @@ export async function initializeRevenueCat(userId?: string): Promise<void> {
  * Check if RevenueCat is properly configured
  */
 export function isRevenueCatConfigured(): boolean {
+  // Not available in Expo Go
+  if (isExpoGo()) return false;
   return isConfigured && REVENUECAT_IOS_KEY !== 'appl_YOUR_KEY_HERE';
 }
 

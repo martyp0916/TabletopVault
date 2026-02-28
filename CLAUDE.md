@@ -7,17 +7,57 @@
 **Target Games**: Warhammer 40K, Warhammer Age of Sigmar, Horus Heresy, Kill Team, Star Wars Legion, Star Wars Shatterpoint, Halo Flashpoint, Bolt Action, Marvel Crisis Protocol, Battle Tech, and more
 **Tech Stack**: React Native + Expo + TypeScript + Supabase + RevenueCat
 **Repository**: https://github.com/martyp0916/TabletopVault
-**Last Updated**: February 18, 2025
+**Support Email**: tabletoporganizerapp@gmail.com
+**Last Updated**: February 20, 2025
 
 ---
 
-## Recent Changes (February 18, 2025)
+## Recent Changes (February 20, 2025)
+
+- **Safe Area Insets Fix**:
+  - Updated all screens to use `useSafeAreaInsets()` instead of hardcoded `paddingTop: 60`
+  - Headers now dynamically adjust to device notch/status bar height
+  - Fixes buttons interfering with clock, battery, and other phone status bar elements
+  - Screens updated: all tabs, collection, item, profile, and user screens
+
+- **Navigation Layout Files**:
+  - Added `_layout.tsx` files for collection, item, profile, and user routes
+  - Hides default Expo Router navigation headers (grey bar with route names)
+  - Each screen now uses custom headers with proper styling
+
+- **App Branding Finalization**:
+  - Updated all user-facing "TabletopVault" strings to "Tabletop Organizer"
+  - Version text: "Tabletop Organizer v1.0.0"
+  - Export titles and filenames updated
+  - Technical identifiers (package name, URL scheme, bundle ID) unchanged
+
+- **App Icon Update**:
+  - Replaced placeholder icons with actual Tabletop Organizer logo
+  - Updated `assets/images/icon.png`, `adaptive-icon.png`, and `splash-icon.png`
+  - Home screen now displays actual logo image instead of shield placeholder
+  - Splash background color set to crimson (#991b1b)
+
+- **Contact Us Screen** (formerly Help & Feedback):
+  - Simplified to single contact section with email link
+  - Removed feedback form
+  - Header changed to "Contact Us"
+  - Email: tabletoporganizerapp@gmail.com (opens mail app)
+  - Profile tab button renamed with envelope icon
+
+- **Supabase Security Fixes**:
+  - Created migration `20250220000000_security_fixes.sql`
+  - Fixed 6 "Function Search Path Mutable" warnings by adding `SET search_path = 'public'`
+  - Fixed "RLS Policy Always True" on profiles table by requiring authenticated users
+  - Note: "Leaked Password Protection" must be enabled manually in Supabase Dashboard
+
+---
+
+## Previous Changes (February 18, 2025)
 
 - **App Branding Update**:
   - Renamed app title from "TabletopVault" to "Tabletop Organizer"
-  - Added placeholder logo icon (shield) next to app title on home screen
+  - Added logo icon next to app title on home screen
   - Restructured header layout with logo spanning title and greeting text
-  - Logo placeholder ready to be replaced with actual app logo image
 
 - **Premium Pricing Display**:
   - Hardcoded premium price display to $2.99/month
@@ -80,7 +120,7 @@
   - Item search within collections tab
   - Fixed scrolling issues with proper flex layout
 - **Export functionality**: Initial CSV and PDF export for collection data
-- **Help & Feedback screen**: New screen at `app/profile/help-feedback.tsx`
+- **Contact Us screen**: Screen at `app/profile/help-feedback.tsx`
 - **Bug fixes**:
   - Fixed TypeScript errors (style names, type incompatibilities)
   - Fixed Supabase nested data transformation in followers/following screens
@@ -94,23 +134,18 @@ Tabletop Organizer is a fully-featured tabletop collection manager with a freemi
 
 ### Home Screen Header
 The home screen displays:
-- **Logo placeholder**: Shield icon in crimson rounded square (52x52px)
+- **App Logo**: Actual logo image (52x52px) in rounded container
 - **App title**: "Tabletop Organizer" with letter spacing
 - **Greeting**: "Welcome back, [username]" aligned with title
 - Both text elements align to the right of the logo
 
-To replace the placeholder with an actual logo:
+The logo is loaded from `@/assets/images/icon.png`:
 ```typescript
-// In app/(tabs)/index.tsx, replace:
-<View style={[styles.logoPlaceholder, { backgroundColor: colors.primary }]}>
-  <FontAwesome name="shield" size={32} color="#fff" />
-</View>
-
-// With:
+// In app/(tabs)/index.tsx:
 <Image
-  source={require('@/assets/images/logo.png')}
-  style={styles.logoPlaceholder}
-  resizeMode="contain"
+  source={require('@/assets/images/icon.png')}
+  style={styles.logoImage}
+  resizeMode="cover"
 />
 ```
 
@@ -138,7 +173,7 @@ To replace the placeholder with an actual logo:
 | Avatar upload | Working | Camera + gallery picker for profile photos |
 | Change password | Working | Requires current password verification |
 | Custom background image | Working | Set app-wide background from Profile tab |
-| Help & Feedback | Working | Links to GitHub issues for support |
+| Contact Us | Working | Email link to tabletoporganizerapp@gmail.com |
 | Notification settings | Working | Toggle goal notifications (premium only) |
 | **Collections** | | |
 | Create collection | Working | Dropdown menu with 16+ supported games + cover image |
@@ -188,7 +223,7 @@ To replace the placeholder with an actual logo:
 | Global dark mode | Working | Theme persists across app restarts via AsyncStorage |
 | Dark mode contrast | Working | Lighter card backgrounds for better visibility |
 | Text visibility | Working | Solid backgrounds for text when background image set |
-| Safe area handling | Working | Content avoids phone notch/camera area |
+| Safe area handling | Working | Dynamic insets for all device types |
 | Keyboard avoiding | Working | All forms adjust for keyboard |
 | Glass effects | Working | Blur effects on cards and tab bar |
 | **Collection Detail** | | |
@@ -342,7 +377,7 @@ The app has 5 main tabs:
 2. **Collections** - List of user's collections with drag-to-reorder and search
 3. **Add** - Form to add new items (respects collection/item limits)
 4. **Planning** - Progress queue, goals, wishlist, progress tracking (Premium only)
-5. **Profile** - User info, settings, customization, export, help, logout
+5. **Profile** - User info, settings, customization, export, contact, logout
 
 ---
 
@@ -494,14 +529,14 @@ follows (
 ```json
 // app.json
 {
-  "scheme": "tabletvault",
+  "scheme": "tabletopvault",
   "ios": {
     "associatedDomains": ["applinks:hsqsskxwtknmuehrldlf.supabase.co"]
   },
   "android": {
     "intentFilters": [{
       "action": "VIEW",
-      "data": [{ "scheme": "tabletvault" }],
+      "data": [{ "scheme": "tabletopvault" }],
       "category": ["BROWSABLE", "DEFAULT"]
     }]
   }
@@ -657,6 +692,11 @@ All hooks reject unexpected fields:
 - `usePaintingGoals`: Only allows defined goal fields
 - `useWishlist`: Only allows defined wishlist fields
 
+### Supabase Security Fixes (Migration: 20250220000000)
+- All trigger functions now include `SET search_path = 'public'` to prevent search path vulnerabilities
+- Profiles RLS policy updated to require authenticated users (not just "true")
+- Functions fixed: `handle_new_user`, `update_follow_counts`, `update_follower_count`, `update_following_count`, `handle_item_changes`, `handle_item_delete`
+
 ### OWASP Compliance
 - **A01:2021 - Broken Access Control**: RLS policies + client-side validation
 - **A03:2021 - Injection**: Input sanitization, parameterized queries via Supabase
@@ -710,23 +750,31 @@ TabletopVault/
 │   │   ├── planning.tsx          # Progress queue, goals, wishlist, progress (Premium)
 │   │   └── profile.tsx           # User profile, settings, export, notifications
 │   ├── collection/
+│   │   ├── _layout.tsx           # Hides default header
 │   │   ├── [id].tsx              # Collection detail + export button
 │   │   └── edit/
 │   │       └── [id].tsx          # Edit collection + cover image
 │   ├── item/
+│   │   ├── _layout.tsx           # Hides default header
 │   │   ├── [id].tsx              # Item detail + edit/delete
 │   │   └── edit/
 │   │       └── [id].tsx          # Edit item + status counts
 │   ├── profile/
+│   │   ├── _layout.tsx           # Hides default header
 │   │   ├── edit.tsx              # Edit profile (username, avatar)
 │   │   ├── change-password.tsx   # Change password screen
-│   │   └── help-feedback.tsx     # Help & feedback screen
+│   │   └── help-feedback.tsx     # Contact Us screen (email link)
 │   ├── user/
-│   │   ├── _layout.tsx           # User profile stack layout
+│   │   ├── _layout.tsx           # Hides default header
 │   │   ├── [id].tsx              # View other user's profile
 │   │   ├── followers.tsx         # Followers list
 │   │   └── following.tsx         # Following list
 │   └── _layout.tsx               # Root layout with ImageBackground wrapper
+├── assets/
+│   └── images/
+│       ├── icon.png              # App icon (also used on home screen)
+│       ├── adaptive-icon.png     # Android adaptive icon
+│       └── splash-icon.png       # Splash screen icon
 ├── components/
 │   ├── Themed.tsx                # Theme-aware Text/View components
 │   ├── FollowButton.tsx          # Follow/unfollow button component
@@ -751,7 +799,7 @@ TabletopVault/
 │   ├── notifications.ts          # Push notification utilities for goal deadlines
 │   ├── premium.tsx               # Premium context with RevenueCat integration
 │   ├── rateLimiter.ts            # Rate limiting utilities
-│   ├── revenuecat.ts             # RevenueCat SDK wrapper (NEW)
+│   ├── revenuecat.ts             # RevenueCat SDK wrapper
 │   ├── supabase.ts               # Supabase client (env vars)
 │   ├── theme.tsx                 # ThemeProvider with background image support
 │   └── validation.ts             # Input validation schemas
@@ -764,7 +812,8 @@ TabletopVault/
 │       ├── 20250124000000_add_planning_features.sql
 │       ├── 20250125000000_add_wishlist.sql
 │       ├── 20250126000000_add_collection_complete_lock.sql
-│       └── 20250127000000_add_collection_sort_order.sql
+│       ├── 20250127000000_add_collection_sort_order.sql
+│       └── 20250220000000_security_fixes.sql
 ├── types/
 │   └── database.ts               # TypeScript interfaces + helpers
 ├── .env                          # Environment variables (git ignored)
@@ -786,7 +835,7 @@ TabletopVault/
 
 | Table | Purpose |
 |-------|---------|
-| `profiles` | User profiles (id, email, username, avatar_url, background_image_url, is_premium) |
+| `profiles` | User profiles (id, email, username, avatar_url, background_image_url, is_premium, follower_count, following_count) |
 | `collections` | Groups of items (id, user_id, name, description, is_public, is_complete, is_locked, sort_order, cover_image_url) |
 | `items` | Individual miniatures with status counts |
 | `item_images` | Photos for items |
@@ -810,6 +859,7 @@ All tables have RLS enabled with user-based access control:
 - Public collections/items visible to all (when is_public = true)
 - Users can view other users' public profiles
 - Follow relationships visible to involved users
+- Profiles require authenticated users (security fix applied Feb 20, 2025)
 
 ---
 
@@ -822,7 +872,7 @@ type ItemStatus = 'nib' | 'assembled' | 'primed' | 'painted' | 'based' | 'wip';
 type GoalType = 'models_painted' | 'items_completed' | 'custom';
 
 // Core Interfaces
-interface User { id, email, username, avatar_url, background_image_url, is_premium, ... }
+interface User { id, email, username, avatar_url, background_image_url, is_premium, follower_count, following_count, ... }
 interface Collection { id, user_id, name, description, is_public, is_complete, is_locked, sort_order, cover_image_url, ... }
 interface Item { id, collection_id, user_id, name, nib_count, assembled_count, primed_count, painted_count, ... }
 
@@ -881,7 +931,6 @@ getStatusColor(status: ItemStatus): string
 - [x] Painting goals with deadlines
 - [x] Progress dashboard (overall and per-game-system)
 - [x] Text visibility improvements
-- [x] Safe area handling for phone notch
 - [x] Keyboard avoiding for goal input and Add screen
 - [x] Dark mode card contrast improvements
 - [x] Goal editing with progress updates
@@ -893,16 +942,22 @@ getStatusColor(status: ItemStatus): string
 - [x] Item notes display on collection cards
 - [x] Collection pre-selection when adding from collection
 - [x] Export data to PDF
-- [x] Help & Feedback screen
+- [x] Contact Us screen with email link
 - [x] Premium/Freemium model (limits, paywall, upgrade prompts)
 - [x] Export as premium feature
 - [x] Push notifications for goal deadlines (premium)
 - [x] Glass card effects with blur
 - [x] Notification settings in profile (premium)
-- [x] **RevenueCat subscription integration**
-- [x] **App rebranding to "Tabletop Organizer"**
-- [x] **Placeholder logo icon on home screen**
-- [x] **Premium price display ($2.99/month)**
+- [x] RevenueCat subscription integration
+- [x] App rebranding to "Tabletop Organizer"
+- [x] App icon with actual logo
+- [x] Premium price display ($2.99/month)
+- [x] **Safe area insets for all screens** (dynamic device adaptation)
+- [x] **Navigation layout files** (hidden default headers)
+- [x] **Supabase security fixes** (function search paths, RLS policies)
+
+### Manual Setup Required
+- [ ] Enable "Leaked Password Protection" in Supabase Dashboard (Auth > Settings)
 
 ### Future Enhancements
 - [ ] Activity feed (see what followed users are painting)
@@ -988,7 +1043,7 @@ client.connect().then(() => client.query(sql)).then(() => {
 16. Set custom background image from Profile tab
 17. Toggle dark mode - close and reopen app, preference persists
 18. Follow other users and view their profiles
-19. Access Help & Feedback from Profile tab
+19. Access Contact Us from Profile tab - tap email to compose
 20. Export all collections from Profile > Export Collection Data
 
 ### Testing Subscriptions

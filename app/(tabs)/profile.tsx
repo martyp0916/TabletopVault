@@ -903,9 +903,9 @@ export default function ProfileScreen() {
         >
           <View style={styles.settingLeft}>
             <View style={[styles.settingIcon, { backgroundColor: '#991b1b' }]}>
-              <FontAwesome name="envelope" size={16} color="#fff" />
+              <FontAwesome name="file-text-o" size={16} color="#fff" />
             </View>
-            <Text style={[styles.settingText, { color: colors.text }]}>Contact Us</Text>
+            <Text style={[styles.settingText, { color: colors.text }]}>Terms & Contact Us</Text>
           </View>
           <FontAwesome name="chevron-right" size={14} color={colors.textSecondary} />
         </Pressable>
