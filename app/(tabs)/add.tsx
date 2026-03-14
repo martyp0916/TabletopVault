@@ -467,56 +467,116 @@ export default function AddScreen() {
             <View style={styles.statusCountRow}>
               <View style={[styles.statusDot, { backgroundColor: '#6b7280' }]} />
               <Text style={[styles.statusCountLabel, { color: colors.text }]}>New in Box</Text>
-              <TextInput
-                style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-                value={nibCount}
-                onChangeText={setNibCount}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor={colors.textSecondary}
-              />
+              <View style={styles.counterContainer}>
+                <Pressable
+                  style={[styles.counterButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => setNibCount(String(Math.max(0, parseInt(nibCount) - 1 || 0)))}
+                >
+                  <FontAwesome name="minus" size={14} color={colors.text} />
+                </Pressable>
+                <Text style={[styles.counterValue, { color: colors.text }]}>{nibCount || '0'}</Text>
+                <Pressable
+                  style={[styles.counterButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => {
+                    const newValue = (parseInt(nibCount) || 0) + 1;
+                    const maxValue = isPremium ? Infinity : 10;
+                    if (newValue <= maxValue) {
+                      setNibCount(String(newValue));
+                    } else {
+                      showUpgradePrompt('items');
+                    }
+                  }}
+                >
+                  <FontAwesome name="plus" size={14} color={colors.text} />
+                </Pressable>
+              </View>
             </View>
 
             {/* Assembled */}
             <View style={styles.statusCountRow}>
               <View style={[styles.statusDot, { backgroundColor: '#991b1b' }]} />
               <Text style={[styles.statusCountLabel, { color: colors.text }]}>Assembled</Text>
-              <TextInput
-                style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-                value={assembledCount}
-                onChangeText={setAssembledCount}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor={colors.textSecondary}
-              />
+              <View style={styles.counterContainer}>
+                <Pressable
+                  style={[styles.counterButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => setAssembledCount(String(Math.max(0, parseInt(assembledCount) - 1 || 0)))}
+                >
+                  <FontAwesome name="minus" size={14} color={colors.text} />
+                </Pressable>
+                <Text style={[styles.counterValue, { color: colors.text }]}>{assembledCount || '0'}</Text>
+                <Pressable
+                  style={[styles.counterButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => {
+                    const newValue = (parseInt(assembledCount) || 0) + 1;
+                    const maxValue = isPremium ? Infinity : 10;
+                    if (newValue <= maxValue) {
+                      setAssembledCount(String(newValue));
+                    } else {
+                      showUpgradePrompt('items');
+                    }
+                  }}
+                >
+                  <FontAwesome name="plus" size={14} color={colors.text} />
+                </Pressable>
+              </View>
             </View>
 
             {/* Primed */}
             <View style={styles.statusCountRow}>
               <View style={[styles.statusDot, { backgroundColor: '#6366f1' }]} />
               <Text style={[styles.statusCountLabel, { color: colors.text }]}>Primed</Text>
-              <TextInput
-                style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-                value={primedCount}
-                onChangeText={setPrimedCount}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor={colors.textSecondary}
-              />
+              <View style={styles.counterContainer}>
+                <Pressable
+                  style={[styles.counterButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => setPrimedCount(String(Math.max(0, parseInt(primedCount) - 1 || 0)))}
+                >
+                  <FontAwesome name="minus" size={14} color={colors.text} />
+                </Pressable>
+                <Text style={[styles.counterValue, { color: colors.text }]}>{primedCount || '0'}</Text>
+                <Pressable
+                  style={[styles.counterButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => {
+                    const newValue = (parseInt(primedCount) || 0) + 1;
+                    const maxValue = isPremium ? Infinity : 10;
+                    if (newValue <= maxValue) {
+                      setPrimedCount(String(newValue));
+                    } else {
+                      showUpgradePrompt('items');
+                    }
+                  }}
+                >
+                  <FontAwesome name="plus" size={14} color={colors.text} />
+                </Pressable>
+              </View>
             </View>
 
             {/* Painted */}
             <View style={styles.statusCountRow}>
               <View style={[styles.statusDot, { backgroundColor: '#10b981' }]} />
               <Text style={[styles.statusCountLabel, { color: colors.text }]}>Painted</Text>
-              <TextInput
-                style={[styles.statusCountInput, { backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
-                value={paintedCount}
-                onChangeText={setPaintedCount}
-                keyboardType="number-pad"
-                placeholder="0"
-                placeholderTextColor={colors.textSecondary}
-              />
+              <View style={styles.counterContainer}>
+                <Pressable
+                  style={[styles.counterButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => setPaintedCount(String(Math.max(0, parseInt(paintedCount) - 1 || 0)))}
+                >
+                  <FontAwesome name="minus" size={14} color={colors.text} />
+                </Pressable>
+                <Text style={[styles.counterValue, { color: colors.text }]}>{paintedCount || '0'}</Text>
+                <Pressable
+                  style={[styles.counterButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => {
+                    const newValue = (parseInt(paintedCount) || 0) + 1;
+                    const maxValue = isPremium ? Infinity : 10;
+                    if (newValue <= maxValue) {
+                      setPaintedCount(String(newValue));
+                    } else {
+                      showUpgradePrompt('items');
+                    }
+                  }}
+                >
+                  <FontAwesome name="plus" size={14} color={colors.text} />
+                </Pressable>
+              </View>
             </View>
           </View>
         </View>
@@ -707,13 +767,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
   },
-  statusCountInput: {
-    width: 60,
-    padding: 10,
-    borderRadius: 8,
-    fontSize: 16,
-    textAlign: 'center',
+  counterContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  counterButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
+  },
+  counterValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    minWidth: 30,
+    textAlign: 'center',
   },
   createCollectionBtn: {
     flexDirection: 'row',

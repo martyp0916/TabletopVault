@@ -5,13 +5,7 @@
  * Note: RevenueCat requires native modules and does NOT work in Expo Go.
  * Use a development build (npx expo run:ios) for testing subscriptions.
  */
-import Purchases, {
-  PurchasesPackage,
-  CustomerInfo,
-  LOG_LEVEL,
-  PurchasesOfferings,
-} from 'react-native-purchases';
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 import Constants from 'expo-constants';
 
 const REVENUECAT_IOS_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY || '';
@@ -23,7 +17,43 @@ let isConfigured = false;
  * Check if running in Expo Go (where native modules aren't available)
  */
 function isExpoGo(): boolean {
-  return Constants.appOwnership === 'expo';
+  // Check multiple indicators for Expo Go
+  if (Constants.appOwnership === 'expo') return true;
+  if (Constants.executionEnvironment === 'storeClient') return true;
+
+  // Check if the native module exists - this is the most reliable check
+  const hasNativeModule = !!NativeModules.RNPurchases;
+  return !hasNativeModule;
+}
+
+// RevenueCat module reference - will be loaded lazily
+let Purchases: any = null;
+let LOG_LEVEL: any = null;
+let moduleLoadAttempted = false;
+
+/**
+ * Lazily load the RevenueCat module
+ * Only called when actually needed and after confirming we're not in Expo Go
+ */
+function loadRevenueCatModule(): boolean {
+  if (moduleLoadAttempted) return !!Purchases;
+  moduleLoadAttempted = true;
+
+  // Don't even try to load in Expo Go
+  if (isExpoGo()) {
+    console.log('RevenueCat: Skipping module load (Expo Go detected)');
+    return false;
+  }
+
+  try {
+    const RevenueCat = require('react-native-purchases');
+    Purchases = RevenueCat.default;
+    LOG_LEVEL = RevenueCat.LOG_LEVEL;
+    return true;
+  } catch (e) {
+    console.log('RevenueCat: Native module not available');
+    return false;
+  }
 }
 
 /**
@@ -35,14 +65,21 @@ export async function initializeRevenueCat(userId?: string): Promise<void> {
 
   // Skip RevenueCat in Expo Go - native modules aren't available
   if (isExpoGo()) {
-    console.log('RevenueCat: Skipping in Expo Go (use development build for subscriptions)');
+    console.log('RevenueCat: Skipping (Expo Go detected)');
+    return;
+  }
+
+  // Try to load the module
+  if (!loadRevenueCatModule() || !Purchases) {
+    console.log('RevenueCat: Module not available');
     return;
   }
 
   // Only configure on iOS for now
   if (Platform.OS === 'ios') {
-    if (!REVENUECAT_IOS_KEY || REVENUECAT_IOS_KEY === 'appl_YOUR_KEY_HERE') {
-      console.warn('RevenueCat: API key not configured');
+    // Valid RevenueCat iOS keys start with 'appl_'
+    if (!REVENUECAT_IOS_KEY || !REVENUECAT_IOS_KEY.startsWith('appl_')) {
+      console.warn('RevenueCat: Valid API key not configured (must start with appl_)');
       return;
     }
 
@@ -53,7 +90,7 @@ export async function initializeRevenueCat(userId?: string): Promise<void> {
       });
 
       // Enable debug logs in development
-      if (__DEV__) {
+      if (__DEV__ && LOG_LEVEL) {
         Purchases.setLogLevel(LOG_LEVEL.DEBUG);
       }
 
@@ -70,14 +107,15 @@ export async function initializeRevenueCat(userId?: string): Promise<void> {
 export function isRevenueCatConfigured(): boolean {
   // Not available in Expo Go
   if (isExpoGo()) return false;
-  return isConfigured && REVENUECAT_IOS_KEY !== 'appl_YOUR_KEY_HERE';
+  // Valid RevenueCat iOS keys start with 'appl_'
+  return isConfigured && !!Purchases && REVENUECAT_IOS_KEY.startsWith('appl_');
 }
 
 /**
  * Check if user has premium entitlement
  */
 export async function checkPremiumStatus(): Promise<boolean> {
-  if (!isConfigured) return false;
+  if (isExpoGo() || !isConfigured || !Purchases) return false;
 
   try {
     const customerInfo = await Purchases.getCustomerInfo();
@@ -91,11 +129,11 @@ export async function checkPremiumStatus(): Promise<boolean> {
 /**
  * Get available subscription packages
  */
-export async function getOfferings(): Promise<PurchasesPackage[]> {
-  if (!isConfigured) return [];
+export async function getOfferings(): Promise<any[]> {
+  if (isExpoGo() || !isConfigured || !Purchases) return [];
 
   try {
-    const offerings: PurchasesOfferings = await Purchases.getOfferings();
+    const offerings = await Purchases.getOfferings();
     if (offerings.current?.availablePackages) {
       return offerings.current.availablePackages;
     }
@@ -109,13 +147,13 @@ export async function getOfferings(): Promise<PurchasesPackage[]> {
 /**
  * Purchase a subscription package
  */
-export async function purchasePackage(pkg: PurchasesPackage): Promise<{
+export async function purchasePackage(pkg: any): Promise<{
   success: boolean;
-  customerInfo?: CustomerInfo;
+  customerInfo?: any;
   error?: string;
   cancelled?: boolean;
 }> {
-  if (!isConfigured) {
+  if (isExpoGo() || !isConfigured || !Purchases) {
     return { success: false, error: 'RevenueCat not configured' };
   }
 
@@ -145,7 +183,7 @@ export async function restorePurchases(): Promise<{
   isPremium: boolean;
   error?: string;
 }> {
-  if (!isConfigured) {
+  if (isExpoGo() || !isConfigured || !Purchases) {
     return { success: false, isPremium: false, error: 'RevenueCat not configured' };
   }
 
@@ -164,7 +202,7 @@ export async function restorePurchases(): Promise<{
  * Identify user with RevenueCat (call after login)
  */
 export async function identifyUser(userId: string): Promise<void> {
-  if (!isConfigured) return;
+  if (isExpoGo() || !isConfigured || !Purchases) return;
 
   try {
     await Purchases.logIn(userId);
@@ -177,7 +215,7 @@ export async function identifyUser(userId: string): Promise<void> {
  * Log out user from RevenueCat (call after logout)
  */
 export async function logOutRevenueCatUser(): Promise<void> {
-  if (!isConfigured) return;
+  if (isExpoGo() || !isConfigured || !Purchases) return;
 
   try {
     await Purchases.logOut();
@@ -191,9 +229,9 @@ export async function logOutRevenueCatUser(): Promise<void> {
  * Note: RevenueCat SDK manages listener cleanup internally
  */
 export function addCustomerInfoListener(
-  callback: (info: CustomerInfo) => void
+  callback: (info: any) => void
 ): () => void {
-  if (!isConfigured) {
+  if (isExpoGo() || !isConfigured || !Purchases) {
     return () => {};
   }
 
@@ -207,8 +245,8 @@ export function addCustomerInfoListener(
 /**
  * Get the customer info (for debugging/display)
  */
-export async function getCustomerInfo(): Promise<CustomerInfo | null> {
-  if (!isConfigured) return null;
+export async function getCustomerInfo(): Promise<any | null> {
+  if (isExpoGo() || !isConfigured || !Purchases) return null;
 
   try {
     return await Purchases.getCustomerInfo();

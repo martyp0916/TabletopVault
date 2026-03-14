@@ -2,7 +2,7 @@
  * Premium Context Provider
  *
  * Manages premium subscription status using RevenueCat and enforces free tier limits.
- * - Free Tier: 2 collections, 5 items per collection, no Planning tab
+ * - Free Tier: 1 collection, 2 items per collection, no Planning tab
  * - Premium Tier: Unlimited collections and items, full Planning access
  */
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
@@ -23,12 +23,14 @@ import {
   addCustomerInfoListener,
   isRevenueCatConfigured,
 } from './revenuecat';
-import type { PurchasesPackage } from 'react-native-purchases';
+
+// Use any type for RevenueCat packages since the module is conditionally loaded
+type PurchasesPackage = any;
 
 // Free tier limits
 export const FREE_TIER_LIMITS = {
-  MAX_COLLECTIONS: 2,
-  MAX_ITEMS_PER_COLLECTION: 5,
+  MAX_COLLECTIONS: 1,
+  MAX_ITEMS_PER_COLLECTION: 2,
 };
 
 export type UpgradeReason = 'collections' | 'items' | 'planning' | 'export';

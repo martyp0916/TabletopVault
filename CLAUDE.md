@@ -4,15 +4,38 @@
 
 **App Name**: Tabletop Organizer (formerly TabletopVault)
 **Purpose**: Mobile app for tabletop gaming collectors to track inventory, share collections, plan painting projects, and connect with other hobbyists
-**Target Games**: Warhammer 40K, Warhammer Age of Sigmar, Horus Heresy, Kill Team, Star Wars Legion, Star Wars Shatterpoint, Halo Flashpoint, Bolt Action, Marvel Crisis Protocol, Battle Tech, and more
+**Target Games**: Warhammer 40K, Warhammer Age of Sigmar, Horus Heresy, Kill Team, Star Wars Legion, Star Wars Shatterpoint, Halo Flashpoint, Bolt Action, Marvel Crisis Protocol, Battle Tech, Gundam Assemble, Starcraft, and more
 **Tech Stack**: React Native + Expo + TypeScript + Supabase + RevenueCat
 **Repository**: https://github.com/martyp0916/TabletopVault
 **Support Email**: tabletoporganizerapp@gmail.com
-**Last Updated**: February 20, 2025
+**Last Updated**: February 28, 2025
 
 ---
 
-## Recent Changes (February 20, 2025)
+## Recent Changes (February 28, 2025)
+
+- **Terms & Conditions**:
+  - Added Terms & Conditions section to the app
+  - 12 sections covering: Acceptance of Terms, Description of Service, User Accounts, Subscription & Payments, User Content, Prohibited Conduct, Privacy, Intellectual Property, Disclaimer of Warranties, Limitation of Liability, Changes to Terms, and Contact
+  - Profile tab button renamed to "Terms & Contact Us" with document icon
+  - Screen header changed to "Terms & Contact"
+  - Terms displayed in scrollable card above Contact Us section
+
+- **RevenueCat Expo Go Fix**:
+  - Added Expo Go detection using `expo-constants`
+  - RevenueCat SDK now skipped in Expo Go (prevents "Network request failed" errors)
+  - App gracefully falls back to Supabase for premium status in Expo Go
+  - Note: Subscriptions require a development build (`npx expo run:ios`)
+
+- **New Logo Design**:
+  - Updated app icon with new dice tray + d20 design
+  - Logo features crimson dice tray, d20 die with "20", and "Tabletop Organizer" text
+  - Applied to `icon.png`, `adaptive-icon.png`, and `splash-icon.png`
+  - Home screen displays new logo
+
+---
+
+## Previous Changes (February 20, 2025)
 
 - **Safe Area Insets Fix**:
   - Updated all screens to use `useSafeAreaInsets()` instead of hardcoded `paddingTop: 60`
@@ -80,7 +103,7 @@
 ## Previous Changes (February 4, 2025)
 
 - **Premium/Freemium Model**:
-  - Free tier: 2 collections, 5 items per collection
+  - Free tier: 1 collection, 2 items per collection
   - Premium tier: Unlimited collections/items, planning tab access, export, notifications
   - Premium context provider (`lib/premium.tsx`) with upgrade prompts
   - Premium paywall component for Planning tab (`components/PremiumPaywall.tsx`)
@@ -120,7 +143,7 @@
   - Item search within collections tab
   - Fixed scrolling issues with proper flex layout
 - **Export functionality**: Initial CSV and PDF export for collection data
-- **Contact Us screen**: Screen at `app/profile/help-feedback.tsx`
+- **Terms & Contact screen**: Screen at `app/profile/help-feedback.tsx`
 - **Bug fixes**:
   - Fixed TypeScript errors (style names, type incompatibilities)
   - Fixed Supabase nested data transformation in followers/following screens
@@ -130,7 +153,7 @@
 
 ## Current Status: Freemium App with RevenueCat Subscriptions
 
-Tabletop Organizer is a fully-featured tabletop collection manager with a freemium business model powered by RevenueCat. Free users can manage up to 2 collections with 5 items each. Premium users get unlimited collections/items, access to the Planning tab, export functionality, and goal deadline notifications.
+Tabletop Organizer is a fully-featured tabletop collection manager with a freemium business model powered by RevenueCat. Free users can manage 1 collection with up to 2 items. Premium users get unlimited collections/items, access to the Planning tab, export functionality, and goal deadline notifications.
 
 ### Home Screen Header
 The home screen displays:
@@ -173,7 +196,7 @@ The logo is loaded from `@/assets/images/icon.png`:
 | Avatar upload | Working | Camera + gallery picker for profile photos |
 | Change password | Working | Requires current password verification |
 | Custom background image | Working | Set app-wide background from Profile tab |
-| Contact Us | Working | Email link to tabletoporganizerapp@gmail.com |
+| Terms & Contact | Working | Terms & Conditions + email link to tabletoporganizerapp@gmail.com |
 | Notification settings | Working | Toggle goal notifications (premium only) |
 | **Collections** | | |
 | Create collection | Working | Dropdown menu with 16+ supported games + cover image |
@@ -185,7 +208,7 @@ The logo is loaded from `@/assets/images/icon.png`:
 | Collection lock status | Working | Lock collections to prevent changes (lock badge) |
 | Drag-to-reorder | Working | Long press and drag to reorder collections |
 | Item search | Working | Search items by name within collections tab |
-| Collection limits | Working | Free tier limited to 2 collections |
+| Collection limits | Working | Free tier limited to 1 collection |
 | **Items** | | |
 | Add item | Working | Models per box + status breakdown |
 | Edit item | Working | Edit name, faction, quantity, status counts, notes |
@@ -194,7 +217,7 @@ The logo is loaded from `@/assets/images/icon.png`:
 | Photo upload | Working | Camera + gallery picker, uploads to Supabase Storage |
 | Status count tracking | Working | Track how many models are in each status per item |
 | Effective status display | Working | Shows "Work in Progress" for mixed states |
-| Item limits | Working | Free tier limited to 5 items per collection |
+| Item limits | Working | Free tier limited to 2 items per collection |
 | **Dashboard** | | |
 | Home dashboard | Working | 4-card status grid + search/filter |
 | Collection stats | Working | Shows breakdown by status |
@@ -302,8 +325,8 @@ This ensures consistent pricing display regardless of RevenueCat loading state. 
 ### Free Tier Limits (`lib/premium.tsx`)
 ```typescript
 const FREE_TIER_LIMITS = {
-  MAX_COLLECTIONS: 2,
-  MAX_ITEMS_PER_COLLECTION: 5,
+  MAX_COLLECTIONS: 1,
+  MAX_ITEMS_PER_COLLECTION: 2,
 };
 ```
 
@@ -716,16 +739,18 @@ Collections can be created for these games (dropdown menu):
 4. Dropzone Commander
 5. Dystopian Wars
 6. Fallout Wasteland Warfare
-7. Halo Flashpoint
-8. Horus Heresy
-9. Kings of War
-10. Marvel Crisis Protocol
-11. Star Wars Legion
-12. Star Wars Shatterpoint
-13. Warmachine
-14. Warhammer 40K
-15. Warhammer 40K: Kill Team
-16. Warhammer Age of Sigmar
+7. Gundam Assemble
+8. Halo Flashpoint
+9. Horus Heresy
+10. Kings of War
+11. Marvel Crisis Protocol
+12. Star Wars Legion
+13. Star Wars Shatterpoint
+14. Starcraft
+15. Warmachine
+16. Warhammer 40K
+17. Warhammer 40K: Kill Team
+18. Warhammer Age of Sigmar
 
 *Wishlist also supports "Other" option for custom game names*
 
@@ -763,7 +788,7 @@ TabletopVault/
 │   │   ├── _layout.tsx           # Hides default header
 │   │   ├── edit.tsx              # Edit profile (username, avatar)
 │   │   ├── change-password.tsx   # Change password screen
-│   │   └── help-feedback.tsx     # Contact Us screen (email link)
+│   │   └── help-feedback.tsx     # Terms & Contact screen
 │   ├── user/
 │   │   ├── _layout.tsx           # Hides default header
 │   │   ├── [id].tsx              # View other user's profile
@@ -942,7 +967,7 @@ getStatusColor(status: ItemStatus): string
 - [x] Item notes display on collection cards
 - [x] Collection pre-selection when adding from collection
 - [x] Export data to PDF
-- [x] Contact Us screen with email link
+- [x] Terms & Contact screen with Terms & Conditions and email link
 - [x] Premium/Freemium model (limits, paywall, upgrade prompts)
 - [x] Export as premium feature
 - [x] Push notifications for goal deadlines (premium)
@@ -955,6 +980,9 @@ getStatusColor(status: ItemStatus): string
 - [x] **Safe area insets for all screens** (dynamic device adaptation)
 - [x] **Navigation layout files** (hidden default headers)
 - [x] **Supabase security fixes** (function search paths, RLS policies)
+- [x] **Terms & Conditions** (12 sections, scrollable display)
+- [x] **RevenueCat Expo Go compatibility** (graceful fallback)
+- [x] **New logo design** (dice tray + d20)
 
 ### Manual Setup Required
 - [ ] Enable "Leaked Password Protection" in Supabase Dashboard (Auth > Settings)
@@ -1016,8 +1044,8 @@ client.connect().then(() => client.query(sql)).then(() => {
 2. Scan QR code with Expo Go on iPhone
 3. Sign up with email/password (validation enforced)
 4. **Free tier testing**:
-   - Create up to 2 collections
-   - Add up to 5 items per collection
+   - Create up to 1 collection
+   - Add up to 2 items per collection
    - Try to exceed limits → see upgrade prompt
    - Tap Planning tab → see paywall
 5. **Premium testing via RevenueCat**:
